@@ -9,12 +9,19 @@
     stopContextMenu: true,
   });
   window.trackCanvas = canvas;
+  const layout = document.querySelector(".app-layout");
   const canvasWidth = canvas.getWidth();
   const canvasHeight = canvas.getHeight();
   const GRID_BOTTOM_MARGIN = 160;
   const DEFAULT_GRID_SIZE_METERS = 0.7;
   const MAJOR_GRID_METERS = 2.1;
   const DEFAULT_FORWARD_OFFSET_METERS = 16;
+  const ZOOM_MIN = 0.4;
+  const ZOOM_MAX = 2.5;
+  const ZOOM_STEP = 0.1;
+  const DEFAULT_CURSOR = canvas.defaultCursor || "default";
+  const PAN_CURSOR = "grab";
+  const PAN_ACTIVE_CURSOR = "grabbing";
 
   function getGridOrigin() {
     return {
@@ -78,6 +85,132 @@
     });
   }
 
+  function clampZoom(value) {
+    return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, value));
+  }
+
+  function updateZoomUI() {
+    if (elements.zoomValue) {
+      elements.zoomValue.textContent = `${Math.round(state.zoom * 100)}%`;
+    }
+    if (elements.zoomSlider) {
+      const sliderValue = Math.round(state.zoom * 100);
+      if (Number(elements.zoomSlider.value) !== sliderValue) {
+        elements.zoomSlider.value = sliderValue.toString();
+      }
+    }
+  }
+
+  function applyZoom(nextZoom, origin) {
+    const targetZoom = clampZoom(nextZoom);
+    const currentZoom = canvas.getZoom();
+    if (Math.abs(targetZoom - currentZoom) < 1e-4) {
+      state.zoom = targetZoom;
+      updateZoomUI();
+      return;
+    }
+    const point = origin || { x: canvasWidth / 2, y: canvasHeight / 2 };
+    canvas.zoomToPoint(point, targetZoom);
+    state.zoom = targetZoom;
+    updateZoomUI();
+    updateGridBackground();
+    canvas.requestRenderAll();
+  }
+
+  const panState = {
+    keyActive: false,
+    isDragging: false,
+    lastClientX: 0,
+    lastClientY: 0,
+    restoreSelection: true,
+  };
+
+  function updatePanCursor() {
+    const cursor = panState.isDragging
+      ? PAN_ACTIVE_CURSOR
+      : panState.keyActive
+      ? PAN_CURSOR
+      : DEFAULT_CURSOR;
+    canvas.defaultCursor = cursor;
+    if (canvas.upperCanvasEl) {
+      canvas.upperCanvasEl.style.cursor = cursor;
+    }
+    if (canvas.lowerCanvasEl) {
+      canvas.lowerCanvasEl.style.cursor = cursor;
+    }
+    if (canvas.wrapperEl) {
+      canvas.wrapperEl.style.cursor = cursor;
+    }
+  }
+
+  function startPan(domEvent) {
+    panState.isDragging = true;
+    panState.lastClientX = domEvent.clientX;
+    panState.lastClientY = domEvent.clientY;
+    panState.restoreSelection = canvas.selection;
+    canvas.selection = false;
+    updatePanCursor();
+  }
+
+  function continuePan(domEvent) {
+    const nextX = domEvent.clientX;
+    const nextY = domEvent.clientY;
+    const deltaX = nextX - panState.lastClientX;
+    const deltaY = nextY - panState.lastClientY;
+    if (deltaX === 0 && deltaY === 0) {
+      return;
+    }
+    canvas.relativePan(new fabric.Point(deltaX, deltaY));
+    panState.lastClientX = nextX;
+    panState.lastClientY = nextY;
+    canvas.requestRenderAll();
+  }
+
+  function endPanInteraction() {
+    if (!panState.isDragging) {
+      updatePanCursor();
+      return;
+    }
+    panState.isDragging = false;
+    canvas.selection = panState.restoreSelection;
+    updatePanCursor();
+    canvas.requestRenderAll();
+  }
+
+  function isEditableElement(element) {
+    if (!element) {
+      return false;
+    }
+    const tagName = element.tagName;
+    if (!tagName) {
+      return Boolean(element.isContentEditable);
+    }
+    const normalizedTag = tagName.toUpperCase();
+    return (
+      element.isContentEditable ||
+      normalizedTag === "INPUT" ||
+      normalizedTag === "TEXTAREA" ||
+      normalizedTag === "SELECT"
+    );
+  }
+
+  function updateSidebarsVisibility() {
+    if (layout) {
+      layout.classList.toggle("sidebars-hidden", state.sidebarsHidden);
+    }
+    if (elements.toggleSidebarsButton) {
+      elements.toggleSidebarsButton.textContent = state.sidebarsHidden
+        ? "Show Sidebars"
+        : "Hide Sidebars";
+      elements.toggleSidebarsButton.setAttribute(
+        "aria-pressed",
+        state.sidebarsHidden ? "true" : "false"
+      );
+    }
+    canvas.calcOffset();
+    canvas.requestRenderAll();
+  }
+
   function createUniqueId() {
     if (typeof window !== "undefined" && window.crypto && window.crypto.randomUUID) {
       return window.crypto.randomUUID();
@@ -95,6 +228,7 @@
     referenceObjects: [],
     showReferenceLayout: true,
     zoom: 1,
+    sidebarsHidden: false,
   };
 
   const REFERENCE_LAYOUT = [
@@ -147,6 +281,11 @@
     resetViewButton: document.getElementById("reset-view"),
     clearSceneButton: document.getElementById("clear-scene"),
     toggleReferencesButton: document.getElementById("toggle-references"),
+    toggleSidebarsButton: document.getElementById("toggle-sidebars"),
+    zoomInButton: document.getElementById("zoom-in"),
+    zoomOutButton: document.getElementById("zoom-out"),
+    zoomSlider: document.getElementById("zoom-slider"),
+    zoomValue: document.getElementById("zoom-value"),
     globalOffsetX: document.getElementById("global-offset-x"),
     globalOffsetY: document.getElementById("global-offset-y"),
     globalRotation: document.getElementById("global-rotation"),
@@ -726,6 +865,9 @@
    */
   function resetView() {
     canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+    state.zoom = 1;
+    updateZoomUI();
+    updateGridBackground();
     canvas.renderAll();
   }
 
@@ -771,19 +913,45 @@
       }
     });
 
-    const ZOOM_MIN = 0.4;
-    const ZOOM_MAX = 2.5;
-    const ZOOM_STEP = 0.1;
+    canvas.on("mouse:down", (event) => {
+      const domEvent = event.e;
+      const isPanMouseButton = domEvent.button === 1 || domEvent.button === 2;
+      if (!panState.keyActive && !isPanMouseButton) {
+        return;
+      }
+      startPan(domEvent);
+      domEvent.preventDefault();
+      domEvent.stopPropagation();
+    });
+
+    canvas.on("mouse:move", (event) => {
+      if (!panState.isDragging) {
+        return;
+      }
+      const domEvent = event.e;
+      continuePan(domEvent);
+      domEvent.preventDefault();
+      domEvent.stopPropagation();
+    });
+
+    canvas.on("mouse:up", () => {
+      endPanInteraction();
+    });
+
+    canvas.on("mouse:out", () => {
+      endPanInteraction();
+    });
 
     canvas.on("mouse:wheel", (event) => {
       const delta = event.e.deltaY;
-      let zoom = canvas.getZoom();
-      zoom *= delta > 0 ? 1 - ZOOM_STEP : 1 + ZOOM_STEP;
-      zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom));
-
+      if (!delta) {
+        return;
+      }
       const pointer = canvas.getPointer(event.e);
-      canvas.zoomToPoint({ x: pointer.x, y: pointer.y }, zoom);
-      state.zoom = zoom;
+      const currentZoom = canvas.getZoom();
+      const nextZoom =
+        delta > 0 ? currentZoom * (1 - ZOOM_STEP) : currentZoom * (1 + ZOOM_STEP);
+      applyZoom(nextZoom, { x: pointer.x, y: pointer.y });
       event.e.preventDefault();
       event.e.stopPropagation();
     });
@@ -824,6 +992,59 @@
         updateReferenceToggleButton();
       });
     }
+    if (elements.toggleSidebarsButton) {
+      elements.toggleSidebarsButton.addEventListener("click", () => {
+        state.sidebarsHidden = !state.sidebarsHidden;
+        updateSidebarsVisibility();
+      });
+    }
+    if (elements.zoomInButton) {
+      elements.zoomInButton.addEventListener("click", () => {
+        applyZoom(canvas.getZoom() * (1 + ZOOM_STEP));
+      });
+    }
+    if (elements.zoomOutButton) {
+      elements.zoomOutButton.addEventListener("click", () => {
+        applyZoom(canvas.getZoom() * (1 - ZOOM_STEP));
+      });
+    }
+    if (elements.zoomSlider) {
+      elements.zoomSlider.min = Math.round(ZOOM_MIN * 100).toString();
+      elements.zoomSlider.max = Math.round(ZOOM_MAX * 100).toString();
+      elements.zoomSlider.addEventListener("input", (event) => {
+        const value = Number(event.target.value);
+        if (Number.isFinite(value)) {
+          applyZoom(value / 100);
+        }
+      });
+    }
+
+    const handleKeyDown = (event) => {
+      if (event.code !== "Space" || isEditableElement(event.target)) {
+        return;
+      }
+      if (!panState.keyActive) {
+        panState.keyActive = true;
+        updatePanCursor();
+      }
+      event.preventDefault();
+    };
+
+    const handleKeyUp = (event) => {
+      if (event.code !== "Space") {
+        return;
+      }
+      panState.keyActive = false;
+      updatePanCursor();
+    };
+
+    window.addEventListener("keydown", handleKeyDown, { passive: false });
+    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("mouseup", endPanInteraction);
+    window.addEventListener("blur", () => {
+      panState.keyActive = false;
+      endPanInteraction();
+    });
   }
 
   /**
@@ -869,6 +1090,9 @@
     populatePalette();
     registerCanvasEvents();
     registerDomEvents();
+    updateSidebarsVisibility();
+    updatePanCursor();
+    updateZoomUI();
     updateGridBackground();
     drawOriginGuides();
     await createReferenceObjects();

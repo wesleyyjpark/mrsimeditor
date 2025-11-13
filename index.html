@@ -20,11 +20,44 @@
       </div>
     </header>
     <main class="app-layout">
-      <section class="sidebar">
+      <section class="sidebar sidebar-left" data-sidebar="left">
         <div class="panel panel-selected">
           <h2>Object Palette</h2>
           <div id="object-palette" class="palette"></div>
         </div>
+      </section>
+      <section class="canvas-area">
+        <div class="canvas-toolbar">
+          <div class="toolbar-actions">
+            <button id="toggle-references" type="button">Hide Reference Layout</button>
+            <button id="reset-view" type="button">Reset View</button>
+            <button id="clear-scene" type="button" class="danger">
+              Clear Scene
+            </button>
+          </div>
+          <div class="zoom-controls" role="group" aria-label="Canvas zoom controls">
+            <button id="zoom-out" type="button" aria-label="Zoom out">-</button>
+            <input
+              id="zoom-slider"
+              type="range"
+              min="40"
+              max="250"
+              step="1"
+              value="100"
+              aria-label="Zoom level"
+            />
+            <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
+            <span id="zoom-value" aria-live="polite">100%</span>
+          </div>
+          <button id="toggle-sidebars" type="button" class="secondary" aria-pressed="false">
+            Hide Sidebars
+          </button>
+        </div>
+        <div class="canvas-wrapper">
+          <canvas id="track-canvas" width="1200" height="800"></canvas>
+        </div>
+      </section>
+      <section class="sidebar sidebar-right" data-sidebar="right">
         <div class="panel">
           <h2>Snapping</h2>
           <label class="field">
@@ -94,18 +127,6 @@
               </div>
             </div>
           </div>
-        </div>
-      </section>
-      <section class="canvas-area">
-        <div class="canvas-toolbar">
-          <button id="toggle-references" type="button">Hide Reference Layout</button>
-          <button id="reset-view" type="button">Reset View</button>
-          <button id="clear-scene" type="button" class="danger">
-            Clear Scene
-          </button>
-        </div>
-        <div class="canvas-wrapper">
-          <canvas id="track-canvas" width="1600" height="1400"></canvas>
         </div>
       </section>
     </main>

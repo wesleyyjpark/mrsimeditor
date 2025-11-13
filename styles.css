@@ -80,6 +80,16 @@ button.danger:hover {
   background: #d94b4b;
 }
 
+button.secondary {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text);
+}
+
+button.secondary:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
 .app-layout {
   display: flex;
   flex-wrap: wrap;
@@ -96,6 +106,19 @@ button.danger:hover {
   overflow-y: auto;
   border-right: 1px solid var(--border);
   background: #f8fafc;
+}
+
+.sidebar-right {
+  border-right: none;
+  border-left: 1px solid var(--border);
+}
+
+.app-layout.sidebars-hidden .sidebar {
+  display: none;
+}
+
+.app-layout.sidebars-hidden .canvas-area {
+  flex: 1 1 100%;
 }
 
 .panel {
@@ -221,7 +244,32 @@ button.danger:hover {
 
 .canvas-toolbar {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+.zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+#zoom-slider {
+  width: 140px;
+}
+
+#zoom-value {
+  min-width: 3.5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .canvas-wrapper {
@@ -249,10 +297,24 @@ button.danger:hover {
     border-bottom: 1px solid var(--border);
   }
 
+  .sidebar-right {
+    border-left: none;
+  }
+
   .canvas-area {
     flex: 1 1 auto;
     padding-top: 0.5rem;
     overflow: auto;
+  }
+
+  .zoom-controls {
+    margin-left: 0;
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  #toggle-sidebars {
+    width: 100%;
   }
 
   .canvas-wrapper {

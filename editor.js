@@ -387,7 +387,7 @@
 
   /**
    * Snap object position and rotation to configured increments.
-   */
+   
   function snapObjectTransform(object) {
     const origin = getGridOrigin();
     const gridPx = state.gridSizeMeters * PIXELS_PER_METER;
@@ -407,6 +407,7 @@
     object.setCoords();
   }
 
+  */
   function placeObjectAt(object, position = {}) {
     const origin = getGridOrigin();
     const x = position.x ?? 0;
@@ -421,6 +422,7 @@
     object.setCoords();
   }
 
+  
   function applyVisualDefaults(object, config) {
     if (object.type !== "image") {
       const baseColor = config.fillColor || config.color || "#3f51b5";

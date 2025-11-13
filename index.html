@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MR Sim Track Editor</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script
+      src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"
+      
+    ></script>
+    <script src="objects.js" defer></script>
+    <script src="editor.js" defer></script>
+  </head>
+  <body>
+    <header class="app-header">
+      <h1>MRSim Track Editor (Prototype)</h1>
+      <div class="header-actions">
+        <button id="export-button" class="primary">Export XML</button>
+      </div>
+    </header>
+    <main class="app-layout">
+      <section class="sidebar">
+        <div class="panel panel-selected">
+          <h2>Object Palette</h2>
+          <div id="object-palette" class="palette"></div>
+        </div>
+        <div class="panel">
+          <h2>Snapping</h2>
+          <label class="field">
+            <span>Grid size (m)</span>
+            <input
+              id="grid-size-input"
+              type="number"
+              min="0.1"
+              step="0.1"
+              value="0.7"
+            />
+          </label>
+          <label class="field">
+            <span>Rotation snap (°)</span>
+            <input
+              id="rotation-snap-input"
+              type="number"
+              min="1"
+              step="1"
+              value="5"
+            />
+          </label>
+        </div>
+        <div class="panel">
+          <h2>Global Transform</h2>
+          <label class="field">
+            <span>Offset X (m)</span>
+            <input id="global-offset-x" type="number" step="0.1" value="0" />
+          </label>
+          <label class="field">
+            <span>Offset Y (m)</span>
+            <input id="global-offset-y" type="number" step="0.1" value="0" />
+          </label>
+          <label class="field">
+            <span>Rotation (°)</span>
+            <input id="global-rotation" type="number" step="1" value="0" />
+          </label>
+        </div>
+        <div class="panel selected-panel">
+          <h2>Selected Object</h2>
+          <div class="selected-panel__body">
+            <div id="selected-none" class="selected-empty">
+              No object selected.
+            </div>
+            <div id="selected-details" class="selected-details hidden">
+              <div class="field readonly">
+                <span>Label</span>
+                <span id="selected-label"></span>
+              </div>
+              <div class="field readonly">
+                <span>Entity name</span>
+                <span id="selected-entity"></span>
+              </div>
+              <label class="field">
+                <span>Altitude (m)</span>
+                <input id="selected-altitude" type="number" step="0.1" value="0" />
+              </label>
+              <div class="field readonly">
+                <span>Include file</span>
+                <span id="selected-include"></span>
+              </div>
+              <div class="selected-actions">
+                <button id="duplicate-button" type="button">Duplicate</button>
+                <button id="delete-button" type="button" class="danger">
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="canvas-area">
+        <div class="canvas-toolbar">
+          <button id="toggle-references" type="button">Hide Reference Layout</button>
+          <button id="reset-view" type="button">Reset View</button>
+          <button id="clear-scene" type="button" class="danger">
+            Clear Scene
+          </button>
+        </div>
+        <div class="canvas-wrapper">
+          <canvas id="track-canvas" width="1600" height="1400"></canvas>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
+

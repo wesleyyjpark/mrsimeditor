@@ -45,18 +45,6 @@
     ctx.fillStyle = "#f9fbfd";
     ctx.fillRect(0, 0, majorSizePx, majorSizePx);
 
-    ctx.strokeStyle = "rgba(33, 33, 33, 0.08)";
-    ctx.lineWidth = 1;
-    for (let i = 1; i < majorMultiplier; i += 1) {
-      const offset = i * baseSpacingPx - 0.5;
-      ctx.beginPath();
-      ctx.moveTo(offset, 0);
-      ctx.lineTo(offset, majorSizePx);
-      ctx.moveTo(0, offset);
-      ctx.lineTo(majorSizePx, offset);
-      ctx.stroke();
-    }
-
     ctx.strokeStyle = "rgba(33, 33, 33, 0.2)";
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -71,8 +59,8 @@
     ctx.stroke();
 
     const origin = getGridOrigin();
-    const offsetX = -((origin.x % baseSpacingPx) || 0);
-    const offsetY = -((origin.y % baseSpacingPx) || 0);
+    const offsetX = -((origin.x % majorSizePx) || 0);
+    const offsetY = -((origin.y % majorSizePx) || 0);
     const pattern = new fabric.Pattern({
       source: patternCanvas,
       repeat: "repeat",
@@ -229,6 +217,13 @@
     showReferenceLayout: true,
     zoom: 1,
     sidebarsHidden: false,
+    ruler: {
+      enabled: false,
+      startPoint: null,
+      line: null,
+      label: null,
+      isDrawing: false,
+    },
   };
 
   const REFERENCE_LAYOUT = [
@@ -271,6 +266,19 @@
     "  </Transform>",
   ];
 
+  const CENTERED_GATE_MACROS = [
+    '  <Macro name="Centered5x5StartFinishGate">',
+    '    <Transform x="-1.05">',
+    '      <Include file="/Data/Simulations/Multirotor/5x5StartFinishGate.xml"/>',
+    "    </Transform>",
+    "  </Macro>",
+    '  <Macro name="Centered5x5Gate">',
+    '    <Transform x="-1.05">',
+    '      <Include file="/Data/Simulations/Multirotor/5x5Gate.xml"/>',
+    "    </Transform>",
+    "  </Macro>",
+  ];
+
   const elements = {
     palette: document.getElementById("object-palette"),
     gridSizeInput: document.getElementById("grid-size-input"),
@@ -295,6 +303,7 @@
     selectedEntity: document.getElementById("selected-entity"),
     selectedInclude: document.getElementById("selected-include"),
     selectedAltitude: document.getElementById("selected-altitude"),
+    measureToggle: document.getElementById("measure-toggle"),
   };
 
   /**
@@ -376,14 +385,194 @@
   }
 
   /**
-   * Convert fabric object's current center position to meters.
+   * Convert fabric object's anchor-aligned position to meters.
    */
+  const ICON_BASELINE_OFFSETS = {
+    [GATE_ICON]: 50 / 638,
+    [GENERIC_ICON]: 50 / 638,
+    [FLAG_ICON]: 285 / 2000,
+    [CUBE_ICON]: 70 / 500,
+  };
+
+  function getConfigForObject(object) {
+    const typeId = object?.data?.typeId;
+    if (!typeId) {
+      return null;
+    }
+    return lookup[typeId] || null;
+  }
+
+  function getAnchorOffsetPx(object) {
+    if (!object) {
+      return 0;
+    }
+    const config = getConfigForObject(object);
+    if (!config) {
+      return 0;
+    }
+    if (typeof config.anchorOffsetMeters === "number") {
+      return config.anchorOffsetMeters * PIXELS_PER_METER;
+    }
+    if (config.icon) {
+      const ratio = ICON_BASELINE_OFFSETS[config.icon] || 0;
+      return ratio * object.getScaledHeight();
+    }
+    return 0;
+  }
+
   function getObjectPositionMeters(object) {
     const origin = getGridOrigin();
+    const anchorOffset = getAnchorOffsetPx(object);
+    const baseTop = object.top - anchorOffset;
     const xMeters = (object.left - origin.x) / PIXELS_PER_METER;
-    const yMeters = (origin.y - object.top) / PIXELS_PER_METER;
+    const yMeters = (origin.y - baseTop) / PIXELS_PER_METER;
     return { x: xMeters, y: yMeters };
   }
+
+  function pointerToMeters(point) {
+    const origin = getGridOrigin();
+    const xMeters = (point.x - origin.x) / PIXELS_PER_METER;
+    const yMeters = (origin.y - point.y) / PIXELS_PER_METER;
+    return { x: xMeters, y: yMeters };
+  }
+
+  function clearRulerGraphics() {
+    if (state.ruler.line) {
+      canvas.remove(state.ruler.line);
+      state.ruler.line = null;
+    }
+    if (state.ruler.label) {
+      canvas.remove(state.ruler.label);
+      state.ruler.label = null;
+    }
+    canvas.requestRenderAll();
+  }
+
+  function resetRulerMeasurement() {
+    state.ruler.startPoint = null;
+    state.ruler.isDrawing = false;
+  }
+
+  function setRulerEnabled(enabled) {
+    state.ruler.enabled = enabled;
+    if (!enabled) {
+      resetRulerMeasurement();
+      clearRulerGraphics();
+    }
+    updateRulerUI();
+  }
+
+  function updateRulerUI() {
+    if (!elements.measureToggle) {
+      return;
+    }
+    elements.measureToggle.textContent = state.ruler.enabled ? "Ruler On" : "Ruler Off";
+    elements.measureToggle.setAttribute("aria-pressed", state.ruler.enabled ? "true" : "false");
+    elements.measureToggle.classList.toggle("primary", state.ruler.enabled);
+  }
+
+  function ensureRulerLine(startPoint, endPoint) {
+    if (!state.ruler.line) {
+      state.ruler.line = new fabric.Line(
+        [startPoint.x, startPoint.y, endPoint.x, endPoint.y],
+        {
+          stroke: "#ff4081",
+          strokeWidth: 2,
+          strokeDashArray: [8, 6],
+          selectable: false,
+          evented: false,
+          excludeFromExport: true,
+        }
+      );
+      canvas.add(state.ruler.line);
+    } else {
+      state.ruler.line.set({
+        x1: startPoint.x,
+        y1: startPoint.y,
+        x2: endPoint.x,
+        y2: endPoint.y,
+      });
+      state.ruler.line.setCoords();
+    }
+    state.ruler.line.bringToFront();
+  }
+
+  function ensureRulerLabel(text, position) {
+    if (!state.ruler.label) {
+      state.ruler.label = new fabric.Textbox(text, {
+        left: position.x,
+        top: position.y,
+        fontSize: 14,
+        fill: "#ffffff",
+        backgroundColor: "rgba(15, 23, 42, 0.64)",
+        padding: 8,
+        borderColor: "transparent",
+        selectable: false,
+        evented: false,
+        textAlign: "center",
+        originX: "center",
+        originY: "center",
+        excludeFromExport: true,
+      });
+      canvas.add(state.ruler.label);
+    } else {
+      state.ruler.label.set({
+        text,
+        left: position.x,
+        top: position.y,
+      });
+      state.ruler.label.setCoords();
+    }
+    state.ruler.label.bringToFront();
+  }
+
+  function updateRulerOverlay(endPoint) {
+    if (!state.ruler.startPoint) {
+      return;
+    }
+    const startPoint = state.ruler.startPoint;
+    ensureRulerLine(startPoint, endPoint);
+
+    const startMeters = pointerToMeters(startPoint);
+    const endMeters = pointerToMeters(endPoint);
+    const deltaLateral = endMeters.x - startMeters.x;
+    const deltaForward = endMeters.y - startMeters.y;
+    const planarDistance = Math.sqrt(deltaLateral ** 2 + deltaForward ** 2);
+    const labelText = `${planarDistance.toFixed(2)} m\nΔx ${deltaLateral.toFixed(
+      2
+    )} m · Δy ${deltaForward.toFixed(2)} m`;
+    const labelPosition = {
+      x: (startPoint.x + endPoint.x) / 2,
+      y: (startPoint.y + endPoint.y) / 2 - 20,
+    };
+    ensureRulerLabel(labelText, labelPosition);
+    canvas.requestRenderAll();
+  }
+
+  function handleRulerClick(pointer) {
+    if (!state.ruler.enabled) {
+      return;
+    }
+    const clickPoint = new fabric.Point(pointer.x, pointer.y);
+    if (!state.ruler.isDrawing) {
+      state.ruler.startPoint = clickPoint;
+      state.ruler.isDrawing = true;
+      updateRulerOverlay(clickPoint);
+      return;
+    }
+
+    updateRulerOverlay(clickPoint);
+    state.ruler.isDrawing = false;
+  }
+
+  function handleRulerMove(pointer) {
+    if (!state.ruler.enabled || !state.ruler.isDrawing || !state.ruler.startPoint) {
+      return;
+    }
+    const movePoint = new fabric.Point(pointer.x, pointer.y);
+    updateRulerOverlay(movePoint);
+  }
+
 
   /**
    * Snap object position and rotation to configured increments.
@@ -391,10 +580,13 @@
   function snapObjectTransform(object) {
     const origin = getGridOrigin();
     const gridPx = state.gridSizeMeters * PIXELS_PER_METER;
+    const anchorOffset = getAnchorOffsetPx(object);
+    const baseTop = object.top - anchorOffset;
     const snappedX = Math.round((object.left - origin.x) / gridPx);
-    const snappedY = Math.round((origin.y - object.top) / gridPx);
+    const snappedY = Math.round((origin.y - baseTop) / gridPx);
     const snappedLeft = origin.x + snappedX * gridPx;
-    const snappedTop = origin.y - snappedY * gridPx;
+    const snappedBaseTop = origin.y - snappedY * gridPx;
+    const snappedTop = snappedBaseTop + anchorOffset;
     const snappedAngle =
       Math.round(object.angle / state.rotationSnap) * state.rotationSnap;
 
@@ -412,10 +604,12 @@
     const x = position.x ?? 0;
     const y = position.y ?? 0;
     const angle = position.angle ?? 0;
+    const anchorOffset = getAnchorOffsetPx(object);
+    const baseTop = origin.y - y * PIXELS_PER_METER;
 
     object.set({
       left: origin.x + x * PIXELS_PER_METER,
-      top: origin.y - y * PIXELS_PER_METER,
+      top: baseTop + anchorOffset,
       angle,
     });
     object.setCoords();
@@ -449,7 +643,7 @@
           (img) => {
             img.set({
               originX: "center",
-              originY: "center",
+              originY: "bottom",
               selectable: true,
               hasControls: true,
               hasBorders: false,
@@ -708,6 +902,7 @@
 
     active.clone((cloned) => {
       canvas.add(cloned);
+      cloned.data = { typeId: meta.config.id };
       const currentPos = getObjectPositionMeters(active);
       placeObjectAt(cloned, {
         x: currentPos.x + state.gridSizeMeters,
@@ -723,7 +918,6 @@
         altitude: meta.altitude,
       };
 
-      cloned.data = { typeId: meta.config.id };
       applyVisualDefaults(cloned, meta.config);
 
       state.placedObjects.push(newMeta);
@@ -780,6 +974,8 @@
     lines.push('  <Include file="/Data/Simulations/Multirotor/Locations/BaylandsPark.xml"/>');
     lines.push('  <Include file="/Data/Simulations/Multirotor/DroneTrackInstanceGroups.xml"/>');
     lines.push('  <Include file="/Data/Simulations/Multirotor/Gates/PoleGates.xml"/>');
+    lines.push("");
+    CENTERED_GATE_MACROS.forEach((line) => lines.push(line));
     lines.push("");
     CANOPY_EXPORT_BLOCK.forEach((line) => lines.push(line));
     lines.push("");
@@ -915,16 +1111,24 @@
 
     canvas.on("mouse:down", (event) => {
       const domEvent = event.e;
-      const isPanMouseButton = domEvent.button === 1 || domEvent.button === 2;
-      if (!panState.keyActive && !isPanMouseButton) {
+      if (state.ruler.enabled && domEvent.button === 0 && !panState.keyActive) {
+        const pointer = canvas.getPointer(domEvent);
+        handleRulerClick(pointer);
+        domEvent.preventDefault();
+        domEvent.stopPropagation();
         return;
       }
-      startPan(domEvent);
-      domEvent.preventDefault();
-      domEvent.stopPropagation();
+      const isPanMouseButton = domEvent.button === 1 || domEvent.button === 2;
+      if (panState.keyActive || isPanMouseButton) {
+        startPan(domEvent);
+        domEvent.preventDefault();
+        domEvent.stopPropagation();
+      }
     });
 
     canvas.on("mouse:move", (event) => {
+      const pointer = canvas.getPointer(event.e);
+      handleRulerMove(pointer);
       if (!panState.isDragging) {
         return;
       }
@@ -998,6 +1202,11 @@
         updateSidebarsVisibility();
       });
     }
+    if (elements.measureToggle) {
+      elements.measureToggle.addEventListener("click", () => {
+        setRulerEnabled(!state.ruler.enabled);
+      });
+    }
     if (elements.zoomInButton) {
       elements.zoomInButton.addEventListener("click", () => {
         applyZoom(canvas.getZoom() * (1 + ZOOM_STEP));
@@ -1020,6 +1229,14 @@
     }
 
     const handleKeyDown = (event) => {
+      if (event.code === "Escape") {
+        if (state.ruler.enabled) {
+          resetRulerMeasurement();
+          clearRulerGraphics();
+          canvas.requestRenderAll();
+        }
+        return;
+      }
       if (event.code !== "Space" || isEditableElement(event.target)) {
         return;
       }
@@ -1091,6 +1308,7 @@
     registerCanvasEvents();
     registerDomEvents();
     updateSidebarsVisibility();
+    updateRulerUI();
     updatePanCursor();
     updateZoomUI();
     updateGridBackground();

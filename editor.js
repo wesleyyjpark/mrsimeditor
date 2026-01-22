@@ -3,6 +3,13 @@
   const PIXELS_PER_METER = 40;
   const catalog = (typeof window !== "undefined" && window.OBJECT_CATALOG) || [];
   const lookup = (typeof window !== "undefined" && window.OBJECT_LOOKUP) || {};
+  // Get icon constants from window (defined in objects.js)
+  const GATE_ICON = (typeof window !== "undefined" && window.GATE_ICON) || "assets/gateobj.png";
+  const FLAG_ICON = (typeof window !== "undefined" && window.FLAG_ICON) || "assets/flag.png";
+  const GENERIC_ICON = (typeof window !== "undefined" && window.GENERIC_ICON) || "assets/gateobj.png";
+  const CUBE_ICON = (typeof window !== "undefined" && window.CUBE_ICON) || "assets/cube.png";
+  const DOUBLE_CUBE_ICON = (typeof window !== "undefined" && window.DOUBLE_CUBE_ICON) || "assets/double-cube.png";
+  const QUAD_LADDER_ICON = (typeof window !== "undefined" && window.QUAD_LADDER_ICON) || "assets/quad-ladder.png";
   const canvas = new fabric.Canvas("track-canvas", {
     selection: true,
     preserveObjectStacking: true,
@@ -303,6 +310,12 @@
     selectedEntity: document.getElementById("selected-entity"),
     selectedInclude: document.getElementById("selected-include"),
     selectedAltitude: document.getElementById("selected-altitude"),
+    selectedPositionX: document.getElementById("selected-position-x"),
+    selectedPositionY: document.getElementById("selected-position-y"),
+    selectedRotation: document.getElementById("selected-rotation"),
+    attachmentControls: document.getElementById("attachment-controls"),
+    attachGateSelect: document.getElementById("attach-gate-select"),
+    attachSideSelect: document.getElementById("attach-side-select"),
     measureToggle: document.getElementById("measure-toggle"),
   };
 
@@ -359,6 +372,11 @@
     }
 
     catalog.forEach((entry) => {
+      // Skip objects marked as hidden from palette (reference-only objects)
+      if (entry.paletteHidden) {
+        return;
+      }
+
       const button = document.createElement("button");
       button.type = "button";
 
@@ -386,12 +404,24 @@
 
   /**
    * Convert fabric object's anchor-aligned position to meters.
+   * 
+   * COORDINATE SYSTEM EXPLANATION:
+   * - Objects are positioned using their icon's anchor point (typically bottom-center)
+   * - The anchor offset accounts for where the "true" position (ground contact point) 
+   *   is relative to the icon's visual anchor
+   * - For gates: offset is 50/638 of icon height (icon anchor is at bottom, true position 
+   *   is slightly above bottom)
+   * - For flags/poles: offset is 285/2000 of icon height (flag pole base is partway up icon)
+   * - getObjectPositionMeters() calculates the true position by subtracting the anchor offset
+   *   from the icon's top position, giving the actual ground position in meters
    */
   const ICON_BASELINE_OFFSETS = {
     [GATE_ICON]: 50 / 638,
     [GENERIC_ICON]: 50 / 638,
     [FLAG_ICON]: 285 / 2000,
     [CUBE_ICON]: 70 / 500,
+    [DOUBLE_CUBE_ICON]: 70 / 500,
+    [QUAD_LADDER_ICON]: 70 / 500,
   };
 
   function getConfigForObject(object) {
@@ -415,7 +445,8 @@
     }
     if (config.icon) {
       const ratio = ICON_BASELINE_OFFSETS[config.icon] || 0;
-      return ratio * object.getScaledHeight();
+      // Round to avoid floating point precision issues that cause snapping misalignment
+      return Math.round(ratio * object.getScaledHeight() * 100) / 100;
     }
     return 0;
   }
@@ -575,6 +606,50 @@
 
 
   /**
+   * Check if a gate would overlap with other gates at the given position.
+   * Returns the minimum safe distance adjustment needed.
+   */
+  function checkGateSpacing(object, targetXMeters, targetYMeters) {
+    const config = getConfigForObject(object);
+    if (!config) return { adjustX: 0, adjustY: 0 };
+    
+    // Only check spacing for gates
+    const isGate = config.id === "gate-5x5" || config.id === "gate-7x7" || config.id === "start-finish-5x5";
+    if (!isGate) return { adjustX: 0, adjustY: 0 };
+    
+    const gateWidth = config.width || 2.1;
+    const minSpacing = gateWidth; // Gates need to be at least their width apart
+    const minSpacingPx = minSpacing * PIXELS_PER_METER;
+    
+    let adjustX = 0;
+    let adjustY = 0;
+    
+    // Check all other gates
+    state.placedObjects.forEach((entry) => {
+      if (entry.fabricObject === object) return; // Skip self
+      
+      const otherConfig = entry.config;
+      const isOtherGate = otherConfig.id === "gate-5x5" || otherConfig.id === "gate-7x7" || otherConfig.id === "start-finish-5x5";
+      if (!isOtherGate) return;
+      
+      const otherPos = getObjectPositionMeters(entry.fabricObject);
+      const dx = targetXMeters - otherPos.x;
+      const dy = targetYMeters - otherPos.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      
+      // If gates are too close, push them apart
+      if (distance > 0 && distance < minSpacing) {
+        const angle = Math.atan2(dy, dx);
+        const neededSeparation = minSpacing - distance;
+        adjustX += Math.cos(angle) * neededSeparation;
+        adjustY += Math.sin(angle) * neededSeparation;
+      }
+    });
+    
+    return { adjustX, adjustY };
+  }
+
+  /**
    * Snap object position and rotation to configured increments.
    */
   function snapObjectTransform(object) {
@@ -582,17 +657,48 @@
     const gridPx = state.gridSizeMeters * PIXELS_PER_METER;
     const anchorOffset = getAnchorOffsetPx(object);
     const baseTop = object.top - anchorOffset;
-    const snappedX = Math.round((object.left - origin.x) / gridPx);
-    const snappedY = Math.round((origin.y - baseTop) / gridPx);
-    const snappedLeft = origin.x + snappedX * gridPx;
-    const snappedBaseTop = origin.y - snappedY * gridPx;
+    
+    // Snap tolerance: if within this many pixels of a snap point, snap to it
+    // Increased to 40% of grid size for more forgiving snapping
+    const SNAP_TOLERANCE = gridPx * 0.4;
+    
+    // Calculate current position relative to grid
+    const currentX = object.left - origin.x;
+    const currentY = origin.y - baseTop;
+    
+    // Find nearest grid point
+    const gridX = Math.round(currentX / gridPx);
+    const gridY = Math.round(currentY / gridPx);
+    const snappedXPos = gridX * gridPx;
+    const snappedYPos = gridY * gridPx;
+    
+    // Check distance to nearest snap point
+    const distanceX = Math.abs(currentX - snappedXPos);
+    const distanceY = Math.abs(currentY - snappedYPos);
+    
+    // Snap if within tolerance, otherwise keep current position
+    let finalSnappedX = distanceX <= SNAP_TOLERANCE ? snappedXPos : currentX;
+    let finalSnappedY = distanceY <= SNAP_TOLERANCE ? snappedYPos : currentY;
+    
+    // Convert to meters for gate spacing check
+    const snappedXMeters = finalSnappedX / PIXELS_PER_METER;
+    const snappedYMeters = finalSnappedY / PIXELS_PER_METER;
+    
+    // Check gate spacing and adjust if needed
+    const spacingAdjust = checkGateSpacing(object, snappedXMeters, snappedYMeters);
+    finalSnappedX += spacingAdjust.adjustX * PIXELS_PER_METER;
+    finalSnappedY += spacingAdjust.adjustY * PIXELS_PER_METER;
+    
+    const snappedLeft = origin.x + finalSnappedX;
+    const snappedBaseTop = origin.y - finalSnappedY;
     const snappedTop = snappedBaseTop + anchorOffset;
     const snappedAngle =
       Math.round(object.angle / state.rotationSnap) * state.rotationSnap;
 
+    // Round final positions to ensure pixel-perfect alignment
     object.set({
-      left: snappedLeft,
-      top: snappedTop,
+      left: Math.round(snappedLeft),
+      top: Math.round(snappedTop),
       angle: snappedAngle,
     });
 
@@ -632,8 +738,11 @@
    * Create a Fabric.js object for each of the objects in the catalog
    */
   async function createFabricObject(config) {
-    const widthPx = config.width * PIXELS_PER_METER;
-    const heightPx = config.height * PIXELS_PER_METER;
+    // Use visual size for display, actual size for export calculations
+    const visualWidth = config.visualWidth !== undefined ? config.visualWidth : config.width;
+    const visualHeight = config.visualHeight !== undefined ? config.visualHeight : config.height;
+    const widthPx = visualWidth * PIXELS_PER_METER;
+    const heightPx = visualHeight * PIXELS_PER_METER;
     const shadow = config.shadow || null;
 
     if (config.icon) {
@@ -664,8 +773,8 @@
 
     if (config.shape === "circle") {
       const diameterPx =
-        (config.width && config.height
-          ? ((config.width + config.height) / 2) * PIXELS_PER_METER
+        (visualWidth && visualHeight
+          ? ((visualWidth + visualHeight) / 2) * PIXELS_PER_METER
           : widthPx || heightPx) || PIXELS_PER_METER;
       return Promise.resolve(
         new fabric.Circle({
@@ -828,6 +937,57 @@
   }
 
   /**
+   * Get all gates in the scene for attachment selection.
+   */
+  function getGatesForAttachment() {
+    return state.placedObjects.filter(
+      (entry) =>
+        entry.config.id === "gate-5x5" ||
+        entry.config.id === "gate-7x7" ||
+        entry.config.id === "start-finish-5x5"
+    );
+  }
+
+  /**
+   * Update attachment controls UI.
+   */
+  function updateAttachmentControls(meta) {
+    if (!elements.attachmentControls || !elements.attachGateSelect) {
+      return;
+    }
+
+    const isPaddedPole = meta && meta.config.id === "padded-pole";
+    if (!isPaddedPole) {
+      elements.attachmentControls.classList.add("hidden");
+      return;
+    }
+
+    elements.attachmentControls.classList.remove("hidden");
+
+    // Populate gate select
+    const gates = getGatesForAttachment();
+    const select = elements.attachGateSelect;
+    const currentValue = select.value;
+    select.innerHTML = '<option value="">None (Standalone)</option>';
+    gates.forEach((gateMeta) => {
+      const option = document.createElement("option");
+      option.value = gateMeta.id;
+      option.textContent = `${gateMeta.config.label} (${gateMeta.entityName})`;
+      select.appendChild(option);
+    });
+
+    // Set current attachment
+    if (meta.attachedTo) {
+      select.value = meta.attachedTo;
+      if (elements.attachSideSelect && meta.attachmentSide) {
+        elements.attachSideSelect.value = meta.attachmentSide;
+      }
+    } else {
+      select.value = "";
+    }
+  }
+
+  /**
    * Refresh inspector UI based on selection.
    */
   function refreshSelectionPanel() {
@@ -835,6 +995,9 @@
     if (!meta) {
       elements.selectedDetails.classList.add("hidden");
       elements.selectedNone.classList.remove("hidden");
+      if (elements.attachmentControls) {
+        elements.attachmentControls.classList.add("hidden");
+      }
       return;
     }
 
@@ -848,6 +1011,22 @@
         ? `Macro: ${meta.config.macroName}`
         : meta.config.includeFile;
     elements.selectedAltitude.value = meta.altitude.toString();
+    
+    // Update position and rotation display
+    const pos = meta.position || getObjectPositionMeters(meta.fabricObject);
+    const angle = meta.angle !== undefined ? meta.angle : meta.fabricObject.angle;
+    if (elements.selectedPositionX) {
+      elements.selectedPositionX.textContent = pos.x.toFixed(3);
+    }
+    if (elements.selectedPositionY) {
+      elements.selectedPositionY.textContent = pos.y.toFixed(3);
+    }
+    if (elements.selectedRotation) {
+      elements.selectedRotation.textContent = angle.toFixed(1);
+    }
+
+    // Update attachment controls
+    updateAttachmentControls(meta);
   }
 
   /**
@@ -859,6 +1038,120 @@
     }
     const value = parseFloat(event.target.value);
     state.activeMeta.altitude = Number.isFinite(value) ? value : 0;
+  }
+
+  /**
+   * Calculate position for attached pole relative to gate.
+   */
+  function calculateAttachedPolePosition(poleMeta, gateMeta, side) {
+    const gatePos = getObjectPositionMeters(gateMeta.fabricObject);
+    const gateAngle = gateMeta.fabricObject.angle;
+    const gateWidth = gateMeta.config.width || 2.1;
+    const gateHeight = gateMeta.config.height || 2.1;
+    
+    // Convert gate angle to radians
+    const angleRad = (gateAngle * Math.PI) / 180;
+    
+    // Calculate offset direction for left/right attachment
+    // In our coordinate system: X is lateral (left/right), Y is forward (front/back)
+    // Gate forward direction at angle 0° is along Y axis (positive Y)
+    // For a gate at 0°: left is negative X, right is positive X
+    // When gate rotates, we rotate the perpendicular vector
+    // Perpendicular to forward direction: left = rotate forward by -90°, right = rotate forward by +90°
+    const offsetDistance = gateWidth / 2; // Half gate width to reach edge (no gap)
+    let offsetX = 0;
+    let offsetY = 0;
+    
+    // Calculate perpendicular offset to gate forward direction
+    // In editor: X is lateral (left/right), Y is forward (front/back)
+    // Gate forward direction at angle θ: (sin(θ), cos(θ)) in (X, Y)
+    // Left is perpendicular: rotate forward by -90° = (-cos(θ), sin(θ))
+    // Right is perpendicular: rotate forward by +90° = (cos(θ), -sin(θ))
+    // Test: At 0° (facing +Y): left = (-1, 0) = -X ✓, right = (1, 0) = +X ✓
+    // Test: At 90° (facing +X): left = (0, 1) = +Y ✓, right = (0, -1) = -Y ✓
+    if (side === "left") {
+      offsetX = -Math.cos(angleRad) * offsetDistance;
+      offsetY = Math.sin(angleRad) * offsetDistance;
+    } else if (side === "right") {
+      offsetX = Math.cos(angleRad) * offsetDistance;
+      offsetY = -Math.sin(angleRad) * offsetDistance;
+    }
+    
+    return {
+      x: gatePos.x + offsetX,
+      y: gatePos.y + offsetY,
+      angle: gateAngle,
+      altitude: gateHeight, // Always position above gate at gate height
+    };
+  }
+
+  /**
+   * Update pole position when attached to gate.
+   */
+  function updateAttachedPolePosition(poleMeta) {
+    if (!poleMeta.attachedTo) {
+      // Not attached, restore normal opacity
+      if (poleMeta.fabricObject) {
+        poleMeta.fabricObject.set({ opacity: 1 });
+      }
+      return;
+    }
+    
+    const gateMeta = state.placedObjects.find((m) => m.id === poleMeta.attachedTo);
+    if (!gateMeta) {
+      // Gate was deleted, detach pole
+      poleMeta.attachedTo = null;
+      poleMeta.attachmentSide = null;
+      if (poleMeta.fabricObject) {
+        poleMeta.fabricObject.set({ opacity: 1 });
+      }
+      return;
+    }
+    
+    const newPos = calculateAttachedPolePosition(
+      poleMeta,
+      gateMeta,
+      poleMeta.attachmentSide || "left"
+    );
+    placeObjectAt(poleMeta.fabricObject, newPos);
+    
+    // Update altitude if attached to top
+    if (newPos.altitude !== undefined) {
+      poleMeta.altitude = newPos.altitude;
+      if (elements.selectedAltitude && state.activeMeta && state.activeMeta.id === poleMeta.id) {
+        elements.selectedAltitude.value = poleMeta.altitude.toString();
+      }
+    }
+    
+    // Visual indicator: slightly reduce opacity for attached poles
+    poleMeta.fabricObject.set({ opacity: 0.85 });
+    
+    updateObjectMetadata(poleMeta.fabricObject);
+  }
+
+  /**
+   * Handle attachment change for PaddedPole.
+   */
+  function handleAttachmentChange() {
+    if (!state.activeMeta || state.activeMeta.config.id !== "padded-pole") {
+      return;
+    }
+    
+    const gateId = elements.attachGateSelect.value;
+    const side = elements.attachSideSelect.value;
+    
+    if (!gateId) {
+      // Detach
+      state.activeMeta.attachedTo = null;
+      state.activeMeta.attachmentSide = null;
+    } else {
+      // Attach
+      state.activeMeta.attachedTo = gateId;
+      state.activeMeta.attachmentSide = side;
+      updateAttachedPolePosition(state.activeMeta);
+    }
+    
+    canvas.requestRenderAll();
   }
 
   /**
@@ -993,6 +1286,49 @@
       lines.push("");
     }
 
+    // Collect gate positions and enforce minimum spacing
+    const gatePositions = [];
+    const GATE_WIDTH = 2.1; // Gates are 2.1m wide and centered with -1.05m offset
+    
+    state.placedObjects.forEach((entry) => {
+      const object = entry.fabricObject;
+      const config = entry.config;
+      const isGate = config.id === "gate-5x5" || config.id === "gate-7x7" || config.id === "start-finish-5x5";
+      
+      if (isGate) {
+        const pos = getObjectPositionMeters(object);
+        const forward = pos.y;
+        const lateral = pos.x;
+        const rotatedForward = forward * cosR - lateral * sinR;
+        const rotatedLateral = forward * sinR + lateral * cosR;
+        let finalX = rotatedForward + offsetForward;
+        let finalY = -rotatedLateral + offsetLateral;
+        
+        // Ensure gates are at least their width apart
+        for (const existingGate of gatePositions) {
+          const dx = finalX - existingGate.x;
+          const dy = finalY - existingGate.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          
+          if (distance > 0 && distance < GATE_WIDTH) {
+            // Push gates apart to maintain minimum spacing
+            const angle = Math.atan2(dy, dx);
+            const neededSeparation = GATE_WIDTH - distance;
+            finalX += Math.cos(angle) * neededSeparation;
+            finalY += Math.sin(angle) * neededSeparation;
+          }
+        }
+        
+        gatePositions.push({ x: finalX, y: finalY, entry });
+      }
+    });
+    
+    // Now export all objects, using adjusted positions for gates
+    const gatePositionsMap = new Map();
+    gatePositions.forEach(({ entry, x, y }) => {
+      gatePositionsMap.set(entry, { x, y });
+    });
+
     state.placedObjects.forEach((entry) => {
       const object = entry.fabricObject;
       const pos = getObjectPositionMeters(object);
@@ -1001,8 +1337,12 @@
       const lateral = pos.x;
       const rotatedForward = forward * cosR - lateral * sinR;
       const rotatedLateral = forward * sinR + lateral * cosR;
-      const finalX = rotatedForward + offsetForward;
-      const finalY = -rotatedLateral + offsetLateral;
+      
+      // Use adjusted position if this is a gate, otherwise use calculated position
+      const adjustedPos = gatePositionsMap.get(entry);
+      const finalX = adjustedPos ? adjustedPos.x : (rotatedForward + offsetForward);
+      const finalY = adjustedPos ? adjustedPos.y : (-rotatedLateral + offsetLateral);
+      
       const finalAngle = normalizeAngle(object.angle + globalRotationDegrees + 90);
       const altitude = entry.altitude || 0;
 
@@ -1092,8 +1432,28 @@
       if (!object || !getMetaForObject(object)) {
         return;
       }
+      
+      const meta = getMetaForObject(object);
+      
+      // If this is an attached pole, prevent independent movement
+      if (meta && meta.attachedTo) {
+        updateAttachedPolePosition(meta);
+        canvas.requestRenderAll();
+        return;
+      }
+      
       snapObjectTransform(object);
       updateObjectMetadata(object);
+      
+      // Update any poles attached to this gate
+      if (meta && (meta.config.id === "gate-5x5" || meta.config.id === "gate-7x7" || meta.config.id === "start-finish-5x5")) {
+        state.placedObjects.forEach((poleMeta) => {
+          if (poleMeta.attachedTo === meta.id) {
+            updateAttachedPolePosition(poleMeta);
+          }
+        });
+      }
+      
       canvas.requestRenderAll();
     });
 
@@ -1101,6 +1461,16 @@
       const object = event.target;
       const meta = getMetaForObject(object);
       if (meta) {
+        // If a gate is deleted, detach any poles attached to it
+        if (meta.config.id === "gate-5x5" || meta.config.id === "gate-7x7" || meta.config.id === "start-finish-5x5") {
+          state.placedObjects.forEach((poleMeta) => {
+            if (poleMeta.attachedTo === meta.id) {
+              poleMeta.attachedTo = null;
+              poleMeta.attachmentSide = null;
+            }
+          });
+        }
+        
         state.metaByObjectId.delete(object);
         state.placedObjects = state.placedObjects.filter((entry) => entry.id !== meta.id);
         if (state.activeMeta && state.activeMeta.id === meta.id) {
@@ -1189,6 +1559,12 @@
       }
     });
     elements.selectedAltitude.addEventListener("change", handleAltitudeChange);
+    if (elements.attachGateSelect) {
+      elements.attachGateSelect.addEventListener("change", handleAttachmentChange);
+    }
+    if (elements.attachSideSelect) {
+      elements.attachSideSelect.addEventListener("change", handleAttachmentChange);
+    }
     if (elements.toggleReferencesButton) {
       elements.toggleReferencesButton.addEventListener("click", () => {
         state.showReferenceLayout = !state.showReferenceLayout;

@@ -1,0 +1,99 @@
+<Simulation>
+  <Include file="/Data/Simulations/Multirotor/Locations/BaylandsPark.xml"/>
+  <Include file="/Data/Simulations/Multirotor/DroneTrackInstanceGroups.xml"/>
+  <Include file="/Data/Simulations/Multirotor/Gates/PoleGates.xml"/>
+
+  <Transform x="25" y="-85" rz="-1" angleDegrees="110">
+    <Transform x="9" y="-4" rz="1" angleDegrees="-30">
+      <Include file="/Data/Simulations/Multirotor/Furniture/ShadeCanopy.xml"/>
+    </Transform>
+    <Transform x="10" y="0">
+      <Include file="/Data/Simulations/Multirotor/Furniture/ShadeCanopy.xml"/>
+    </Transform>
+    <Transform x="10" y="4" rz="1" angleDegrees="3">
+      <Include file="/Data/Simulations/Multirotor/Furniture/ShadeCanopy.xml"/>
+    </Transform>
+    <Transform x="9.8" y="8" rz="1" angleDegrees="0">
+      <Include file="/Data/Simulations/Multirotor/Furniture/ShadeCanopy.xml"/>
+    </Transform>
+  </Transform>
+
+  <Transform x="30" y="-60">
+    <Entity name="Track">
+      <Transform x="0" y="0" rz="-1" angleDegrees="0">
+        <Transform>
+          <Include file="/Data/Simulations/Multirotor/7x7Mat.xml"/>
+        </Transform>
+        <Transform z=".025" rz="-1" angleDegrees="90">
+          <Include file="/Data/Simulations/Multirotor/LaunchStands/MetalLaunchStand.xml"/>
+        </Transform>
+      </Transform>
+
+      <Transform x="11.200" y="-4.200" z="0.000" angleDegrees="0.0" rz="-1">
+        <Entity name="gate1">
+          <Include file="/Data/Simulations/Multirotor/5x5Gate.xml"/>
+        </Entity>
+      </Transform>
+      <Transform x="5.600" y="0.700" z="0.000" angleDegrees="90.0" rz="-1">
+        <Entity name="ladder1">
+          <Instance macro="PipeLadder"/>
+        </Entity>
+      </Transform>
+      <Transform x="0.700" y="5.600" z="0.000" angleDegrees="90.0" rz="-1">
+        <Entity name="flag1">
+          <Include file="/Data/Simulations/Multirotor/FlagPassLeft.xml"/>
+        </Entity>
+      </Transform>
+      <Transform x="4.900" y="10.500" z="0.000" angleDegrees="90.0" rz="-1">
+        <Entity name="ladder2">
+          <Instance macro="PipeQuadrupleLadder"/>
+        </Entity>
+      </Transform>
+      <Transform x="9.100" y="14.700" z="0.000" angleDegrees="180.0" rz="-1">
+        <Entity name="gate2">
+          <Include file="/Data/Simulations/Multirotor/5x5Gate.xml"/>
+        </Entity>
+      </Transform>
+      <Transform x="15.400" y="9.100" z="0.000" angleDegrees="90.0" rz="-1">
+        <Entity name="cube1">
+          <Instance macro="PipeCube"/>
+        </Entity>
+      </Transform>
+      <Transform x="15.400" y="4.200" z="0.000" angleDegrees="90.0" rz="-1">
+        <Entity name="gate3">
+          <Include file="/Data/Simulations/Multirotor/5x5Gate.xml"/>
+        </Entity>
+      </Transform>
+      <Transform x="15.400" y="6.300" z="0.000" angleDegrees="90.0" rz="-1">
+        <Entity name="gate4">
+          <Include file="/Data/Simulations/Multirotor/5x5Gate.xml"/>
+        </Entity>
+      </Transform>
+      <Transform x="21.700" y="4.900" z="0.000" angleDegrees="90.0" rz="-1">
+        <Entity name="flag2">
+          <Include file="/Data/Simulations/Multirotor/FlagPassLeft.xml"/>
+        </Entity>
+      </Transform>
+      <Transform x="11.200" y="7.000" z="0.000" angleDegrees="90.0" rz="-1">
+        <Entity name="ladder3">
+          <Instance macro="PipeQuadrupleLadder"/>
+        </Entity>
+      </Transform>
+      <Transform x="10.500" y="2.100" z="0.000" angleDegrees="90.0" rz="-1">
+        <Entity name="flag3">
+          <Include file="/Data/Simulations/Multirotor/FlagPassLeft.xml"/>
+        </Entity>
+      </Transform>
+      <Transform x="19.600" y="-4.200" z="0.000" angleDegrees="90.0" rz="-1">
+        <Entity name="cube2">
+          <Instance macro="PipeDoubleCube"/>
+        </Entity>
+      </Transform>
+      <Transform x="17.500" y="-4.200" z="0.000" angleDegrees="90.0" rz="-1">
+        <Entity name="cube3">
+          <Instance macro="PipeCube"/>
+        </Entity>
+      </Transform>
+    </Entity>
+  </Transform>
+</Simulation>

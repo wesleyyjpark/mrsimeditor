@@ -114,6 +114,18 @@
                 <span>Entity name</span>
                 <span id="selected-entity"></span>
               </div>
+              <div class="field readonly">
+                <span>Position X (m)</span>
+                <span id="selected-position-x">0.000</span>
+              </div>
+              <div class="field readonly">
+                <span>Position Y (m)</span>
+                <span id="selected-position-y">0.000</span>
+              </div>
+              <div class="field readonly">
+                <span>Rotation (°)</span>
+                <span id="selected-rotation">0</span>
+              </div>
               <label class="field">
                 <span>Altitude (m)</span>
                 <input id="selected-altitude" type="number" step="0.1" value="0" />
@@ -121,6 +133,21 @@
               <div class="field readonly">
                 <span>Include file</span>
                 <span id="selected-include"></span>
+              </div>
+              <div id="attachment-controls" class="attachment-controls hidden">
+                <label class="field">
+                  <span>Attach to Gate</span>
+                  <select id="attach-gate-select">
+                    <option value="">None (Standalone)</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Attachment Side</span>
+                  <select id="attach-side-select">
+                    <option value="left">Left</option>
+                    <option value="right">Right</option>
+                  </select>
+                </label>
               </div>
               <div class="selected-actions">
                 <button id="duplicate-button" type="button">Duplicate</button>

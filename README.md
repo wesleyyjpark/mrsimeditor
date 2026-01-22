@@ -16,3 +16,8 @@ If you have better assets please let me know LOL
 cd into the directory and then
 python -m http.server 8000
 and then go to http://localhost:8000
+
+## Installing Track Files
+uh this is a wip rn, just ignore, if u want the tracks u can just download them from the discord
+
+Tracks will be copied to `Documents/MRSIM/Tracks` on your system.

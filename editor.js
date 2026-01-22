@@ -348,7 +348,7 @@
   }
 
   /**
-   * Build an entity name with a numeric suffix (e.g. gate1, gate2).
+   * Build an entity name with a numeric suffix (e.g. gate1, gate2). this is important for locking the poles to a specfic gate
    */
   function allocateEntityName(prefix) {
     const count = (state.entityCounters[prefix] || 0) + 1;
@@ -386,10 +386,14 @@
 
       const includeSpan = document.createElement("span");
       includeSpan.className = "include";
-      includeSpan.textContent =
-        entry.placement === "macro"
-          ? `Macro: ${entry.macroName}`
-          : entry.includeFile.replace("/Data/Simulations/Multirotor/", "");
+      if (entry.placement === "macro") {
+        includeSpan.textContent = `Macro: ${entry.macroName}`;
+      } else if (entry.placement === "composite") {
+        const partCount = entry.compositeParts ? entry.compositeParts.length : 0;
+        includeSpan.textContent = `Composite: ${partCount} parts`;
+      } else {
+        includeSpan.textContent = entry.includeFile.replace("/Data/Simulations/Multirotor/", "");
+      }
 
       button.appendChild(labelSpan);
       button.appendChild(includeSpan);
@@ -405,7 +409,7 @@
   /**
    * Convert fabric object's anchor-aligned position to meters.
    * 
-   * COORDINATE SYSTEM EXPLANATION:
+   * COORDINATE SYSTEM EXPLANATION: (this will be changed it sucks ass)
    * - Objects are positioned using their icon's anchor point (typically bottom-center)
    * - The anchor offset accounts for where the "true" position (ground contact point) 
    *   is relative to the icon's visual anchor
@@ -1346,23 +1350,50 @@
       const finalAngle = normalizeAngle(object.angle + globalRotationDegrees + 90);
       const altitude = entry.altitude || 0;
 
-      lines.push(
-        `      <Transform x="${finalX.toFixed(3)}" y="${finalY.toFixed(
-          3
-        )}" z="${altitude.toFixed(3)}" angleDegrees="${finalAngle.toFixed(
-          1
-        )}" rz="-1">`
-      );
-      lines.push(`        <Entity name="${entry.entityName}">`);
-
-      if (entry.config.placement === "macro") {
-        lines.push(`          <Instance macro="${entry.config.macroName}"/>`);
+      // Handle composite objects (like pipe-flag with stacked poles)
+      if (entry.config.placement === "composite" && entry.config.compositeParts) {
+        entry.config.compositeParts.forEach((part, index) => {
+          const partAltitude = altitude + (part.altitude || 0);
+          const partEntityName = index === 0 ? entry.entityName : `${entry.entityName}_${index + 1}`;
+          
+          lines.push(
+            `      <Transform x="${finalX.toFixed(3)}" y="${finalY.toFixed(
+              3
+            )}" z="${partAltitude.toFixed(3)}" angleDegrees="${finalAngle.toFixed(
+              1
+            )}" rz="-1">`
+          );
+          lines.push(`        <Entity name="${partEntityName}">`);
+          
+          if (part.macroName) {
+            lines.push(`          <Instance macro="${part.macroName}"/>`);
+          } else if (part.includeFile) {
+            lines.push(`          <Include file="${part.includeFile}"/>`);
+          }
+          
+          lines.push("        </Entity>");
+          lines.push("      </Transform>");
+        });
       } else {
-        lines.push(`          <Include file="${entry.config.includeFile}"/>`);
-      }
+        // Standard single object export
+        lines.push(
+          `      <Transform x="${finalX.toFixed(3)}" y="${finalY.toFixed(
+            3
+          )}" z="${altitude.toFixed(3)}" angleDegrees="${finalAngle.toFixed(
+            1
+          )}" rz="-1">`
+        );
+        lines.push(`        <Entity name="${entry.entityName}">`);
 
-      lines.push("        </Entity>");
-      lines.push("      </Transform>");
+        if (entry.config.placement === "macro") {
+          lines.push(`          <Instance macro="${entry.config.macroName}"/>`);
+        } else {
+          lines.push(`          <Include file="${entry.config.includeFile}"/>`);
+        }
+
+        lines.push("        </Entity>");
+        lines.push("      </Transform>");
+      }
     });
 
     lines.push("    </Entity>");

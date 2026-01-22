@@ -138,12 +138,29 @@ const OBJECT_CATALOG = [
     entityPrefix: "trkPole",
     macroName: "PaddedPole",
     width: 2,
-    height: 10, // Double height for taller pole
+    height: 4,
     altitude: 0, // Will be set when attached to top of gate
     color: "#66bb6a",
     placement: "macro",
     icon: FLAG_ICON,
     anchorOffsetMeters: 0,
+  },
+  {
+    id: "pipe-flag",
+    label: "Pipe Flag",
+    entityPrefix: "trkFlag",
+    macroName: "PaddedPole",
+    width: 2,
+    height: 4, // Visual height for stacked poles
+    altitude: 0,
+    color: "#4caf50",
+    placement: "composite", // Special placement type for composite objects
+    icon: FLAG_ICON,
+    anchorOffsetMeters: 0,
+    compositeParts: [
+      { macroName: "PaddedPole", altitude: 0 },
+      { macroName: "PaddedPole", altitude: 2 },
+    ],
   },
   {
     id: "shade-canopy",

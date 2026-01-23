@@ -130,6 +130,16 @@
                 <span>Altitude (m)</span>
                 <input id="selected-altitude" type="number" step="0.1" value="0" />
               </label>
+              <div id="gate-stack-controls" class="attachment-controls hidden">
+                <label class="field">
+                  <span>5x5 Gate Stack</span>
+                  <select id="gate-stack-count">
+                    <option value="1">1 gate</option>
+                    <option value="2">2 gates</option>
+                    <option value="3">3 gates</option>
+                  </select>
+                </label>
+              </div>
               <div class="field readonly">
                 <span>Include file</span>
                 <span id="selected-include"></span>
@@ -146,6 +156,12 @@
                   <select id="attach-side-select">
                     <option value="left">Left</option>
                     <option value="right">Right</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Attach Gate Level</span>
+                  <select id="attach-level-select">
+                    <option value="1">Gate 1</option>
                   </select>
                 </label>
               </div>

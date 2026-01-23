@@ -316,6 +316,9 @@
     attachmentControls: document.getElementById("attachment-controls"),
     attachGateSelect: document.getElementById("attach-gate-select"),
     attachSideSelect: document.getElementById("attach-side-select"),
+    attachLevelSelect: document.getElementById("attach-level-select"),
+    gateStackControls: document.getElementById("gate-stack-controls"),
+    gateStackCount: document.getElementById("gate-stack-count"),
     measureToggle: document.getElementById("measure-toggle"),
   };
 
@@ -618,12 +621,10 @@
     if (!config) return { adjustX: 0, adjustY: 0 };
     
     // Only check spacing for gates
-    const isGate = config.id === "gate-5x5" || config.id === "gate-7x7" || config.id === "start-finish-5x5";
-    if (!isGate) return { adjustX: 0, adjustY: 0 };
+    if (!isGateConfig(config)) return { adjustX: 0, adjustY: 0 };
     
     const gateWidth = config.width || 2.1;
     const minSpacing = gateWidth; // Gates need to be at least their width apart
-    const minSpacingPx = minSpacing * PIXELS_PER_METER;
     
     let adjustX = 0;
     let adjustY = 0;
@@ -633,8 +634,7 @@
       if (entry.fabricObject === object) return; // Skip self
       
       const otherConfig = entry.config;
-      const isOtherGate = otherConfig.id === "gate-5x5" || otherConfig.id === "gate-7x7" || otherConfig.id === "start-finish-5x5";
-      if (!isOtherGate) return;
+      if (!isGateConfig(otherConfig)) return;
       
       const otherPos = getObjectPositionMeters(entry.fabricObject);
       const dx = targetXMeters - otherPos.x;
@@ -904,6 +904,7 @@
       fabricObject,
       entityName,
       altitude: config.altitude ?? 0,
+      stackCount: isStackableGateConfig(config) ? 1 : undefined,
     };
 
     state.placedObjects.push(metadata);
@@ -943,13 +944,40 @@
   /**
    * Get all gates in the scene for attachment selection.
    */
+  const GATE_TYPE_IDS = new Set(["gate-5x5", "gate-7x7", "start-finish-5x5"]);
+  const STACKABLE_GATE_TYPE_IDS = new Set(["gate-5x5", "start-finish-5x5"]);
+
   function getGatesForAttachment() {
-    return state.placedObjects.filter(
-      (entry) =>
-        entry.config.id === "gate-5x5" ||
-        entry.config.id === "gate-7x7" ||
-        entry.config.id === "start-finish-5x5"
-    );
+    return state.placedObjects.filter((entry) => isGateConfig(entry.config));
+  }
+
+  function isGateConfig(config) {
+    return Boolean(config && GATE_TYPE_IDS.has(config.id));
+  }
+
+  function isStackableGateConfig(config) {
+    return Boolean(config && STACKABLE_GATE_TYPE_IDS.has(config.id));
+  }
+
+  function getGateStackCount(meta) {
+    if (!meta || !isStackableGateConfig(meta.config)) {
+      return 1;
+    }
+    const count = Number.parseInt(meta.stackCount, 10);
+    if (!Number.isFinite(count)) {
+      return 1;
+    }
+    return Math.max(1, Math.min(3, count));
+  }
+
+  function getGateStackSpacing(meta) {
+    if (!meta || !meta.config) {
+      return 0;
+    }
+    if (typeof meta.config.stackSpacingMeters === "number") {
+      return meta.config.stackSpacingMeters;
+    }
+    return meta.config.height || 2.1;
   }
 
   /**
@@ -971,7 +999,6 @@
     // Populate gate select
     const gates = getGatesForAttachment();
     const select = elements.attachGateSelect;
-    const currentValue = select.value;
     select.innerHTML = '<option value="">None (Standalone)</option>';
     gates.forEach((gateMeta) => {
       const option = document.createElement("option");
@@ -989,6 +1016,67 @@
     } else {
       select.value = "";
     }
+
+    const gateMeta = meta.attachedTo
+      ? state.placedObjects.find((entry) => entry.id === meta.attachedTo)
+      : null;
+    const clampedLevel = updateAttachmentLevelOptions(gateMeta, meta.attachedLevel);
+    if (gateMeta) {
+      meta.attachedLevel = clampedLevel;
+    }
+  }
+
+  function updateAttachmentLevelOptions(gateMeta, preferredLevel) {
+    if (!elements.attachLevelSelect) {
+      return 1;
+    }
+    const select = elements.attachLevelSelect;
+    select.innerHTML = "";
+    if (!gateMeta) {
+      select.disabled = true;
+      const option = document.createElement("option");
+      option.value = "1";
+      option.textContent = "Gate 1";
+      select.appendChild(option);
+      select.value = "1";
+      return 1;
+    }
+
+    const stackCount = getGateStackCount(gateMeta);
+    for (let i = 1; i <= stackCount; i += 1) {
+      const option = document.createElement("option");
+      option.value = i.toString();
+      if (stackCount === 1) {
+        option.textContent = "Gate 1 (only)";
+      } else if (i === 1) {
+        option.textContent = "Gate 1 (bottom)";
+      } else if (i === stackCount) {
+        option.textContent = `Gate ${i} (top)`;
+      } else {
+        option.textContent = `Gate ${i}`;
+      }
+      select.appendChild(option);
+    }
+    const desiredLevel = Number.parseInt(preferredLevel, 10);
+    const clampedLevel = Number.isFinite(desiredLevel)
+      ? Math.min(stackCount, Math.max(1, desiredLevel))
+      : stackCount;
+    select.disabled = false;
+    select.value = clampedLevel.toString();
+    return clampedLevel;
+  }
+
+  function updateGateStackControls(meta) {
+    if (!elements.gateStackControls || !elements.gateStackCount) {
+      return;
+    }
+    if (!meta || !isStackableGateConfig(meta.config)) {
+      elements.gateStackControls.classList.add("hidden");
+      return;
+    }
+    elements.gateStackControls.classList.remove("hidden");
+    const stackCount = getGateStackCount(meta);
+    elements.gateStackCount.value = stackCount.toString();
   }
 
   /**
@@ -1001,6 +1089,9 @@
       elements.selectedNone.classList.remove("hidden");
       if (elements.attachmentControls) {
         elements.attachmentControls.classList.add("hidden");
+      }
+      if (elements.gateStackControls) {
+        elements.gateStackControls.classList.add("hidden");
       }
       return;
     }
@@ -1030,6 +1121,7 @@
     }
 
     // Update attachment controls
+    updateGateStackControls(meta);
     updateAttachmentControls(meta);
   }
 
@@ -1047,11 +1139,18 @@
   /**
    * Calculate position for attached pole relative to gate.
    */
-  function calculateAttachedPolePosition(poleMeta, gateMeta, side) {
+  function calculateAttachedPolePosition(poleMeta, gateMeta, side, level) {
     const gatePos = getObjectPositionMeters(gateMeta.fabricObject);
     const gateAngle = gateMeta.fabricObject.angle;
     const gateWidth = gateMeta.config.width || 2.1;
     const gateHeight = gateMeta.config.height || 2.1;
+    const gateBaseAltitude = gateMeta.altitude || 0;
+    const stackSpacing = getGateStackSpacing(gateMeta);
+    const stackCount = getGateStackCount(gateMeta);
+    const requestedLevel = Number.parseInt(level, 10);
+    const stackLevel = Number.isFinite(requestedLevel)
+      ? Math.min(stackCount, Math.max(1, requestedLevel))
+      : stackCount;
     
     // Convert gate angle to radians
     const angleRad = (gateAngle * Math.PI) / 180;
@@ -1085,7 +1184,7 @@
       x: gatePos.x + offsetX,
       y: gatePos.y + offsetY,
       angle: gateAngle,
-      altitude: gateHeight, // Always position above gate at gate height
+      altitude: gateBaseAltitude + gateHeight + stackSpacing * (stackLevel - 1),
     };
   }
 
@@ -1106,16 +1205,24 @@
       // Gate was deleted, detach pole
       poleMeta.attachedTo = null;
       poleMeta.attachmentSide = null;
+      poleMeta.attachedLevel = null;
       if (poleMeta.fabricObject) {
         poleMeta.fabricObject.set({ opacity: 1 });
       }
       return;
     }
-    
+    const stackCount = getGateStackCount(gateMeta);
+    const requestedLevel = Number.parseInt(poleMeta.attachedLevel, 10);
+    const clampedLevel = Number.isFinite(requestedLevel)
+      ? Math.min(stackCount, Math.max(1, requestedLevel))
+      : stackCount;
+    poleMeta.attachedLevel = clampedLevel;
+
     const newPos = calculateAttachedPolePosition(
       poleMeta,
       gateMeta,
-      poleMeta.attachmentSide || "left"
+      poleMeta.attachmentSide || "left",
+      clampedLevel
     );
     placeObjectAt(poleMeta.fabricObject, newPos);
     
@@ -1143,18 +1250,50 @@
     
     const gateId = elements.attachGateSelect.value;
     const side = elements.attachSideSelect.value;
+    const requestedLevel = elements.attachLevelSelect
+      ? elements.attachLevelSelect.value
+      : "1";
     
     if (!gateId) {
       // Detach
       state.activeMeta.attachedTo = null;
       state.activeMeta.attachmentSide = null;
+      state.activeMeta.attachedLevel = null;
+      updateAttachmentLevelOptions(null);
     } else {
       // Attach
+      const gateMeta = state.placedObjects.find((entry) => entry.id === gateId);
+      const clampedLevel = updateAttachmentLevelOptions(gateMeta, requestedLevel);
       state.activeMeta.attachedTo = gateId;
       state.activeMeta.attachmentSide = side;
+      state.activeMeta.attachedLevel = clampedLevel;
       updateAttachedPolePosition(state.activeMeta);
     }
     
+    canvas.requestRenderAll();
+  }
+
+  function handleGateStackChange() {
+    if (!state.activeMeta || !isStackableGateConfig(state.activeMeta.config)) {
+      return;
+    }
+    const requestedCount = Number.parseInt(elements.gateStackCount.value, 10);
+    const clampedCount = Number.isFinite(requestedCount)
+      ? Math.min(3, Math.max(1, requestedCount))
+      : 1;
+    state.activeMeta.stackCount = clampedCount;
+    updateGateStackControls(state.activeMeta);
+
+    // Update any poles attached to this gate
+    state.placedObjects.forEach((poleMeta) => {
+      if (poleMeta.attachedTo === state.activeMeta.id) {
+        if (poleMeta.attachedLevel && poleMeta.attachedLevel > clampedCount) {
+          poleMeta.attachedLevel = clampedCount;
+        }
+        updateAttachedPolePosition(poleMeta);
+      }
+    });
+
     canvas.requestRenderAll();
   }
 
@@ -1213,6 +1352,7 @@
         fabricObject: cloned,
         entityName: allocateEntityName(meta.config.entityPrefix),
         altitude: meta.altitude,
+        stackCount: meta.stackCount,
       };
 
       applyVisualDefaults(cloned, meta.config);
@@ -1350,6 +1490,31 @@
       const finalAngle = normalizeAngle(object.angle + globalRotationDegrees + 90);
       const altitude = entry.altitude || 0;
 
+      const stackCount = getGateStackCount(entry);
+      if (isStackableGateConfig(entry.config) && stackCount > 1) {
+        const stackSpacing = getGateStackSpacing(entry);
+        for (let i = 1; i <= stackCount; i += 1) {
+          const stackAltitude = altitude + stackSpacing * (i - 1);
+          const stackEntityName = i === 1 ? entry.entityName : `${entry.entityName}_stack${i}`;
+          lines.push(
+            `      <Transform x="${finalX.toFixed(3)}" y="${finalY.toFixed(
+              3
+            )}" z="${stackAltitude.toFixed(3)}" angleDegrees="${finalAngle.toFixed(
+              1
+            )}" rz="-1">`
+          );
+          lines.push(`        <Entity name="${stackEntityName}">`);
+          if (entry.config.placement === "macro") {
+            lines.push(`          <Instance macro="${entry.config.macroName}"/>`);
+          } else {
+            lines.push(`          <Include file="${entry.config.includeFile}"/>`);
+          }
+          lines.push("        </Entity>");
+          lines.push("      </Transform>");
+        }
+        return;
+      }
+
       // Handle composite objects (like pipe-flag with stacked poles)
       if (entry.config.placement === "composite" && entry.config.compositeParts) {
         entry.config.compositeParts.forEach((part, index) => {
@@ -1477,7 +1642,7 @@
       updateObjectMetadata(object);
       
       // Update any poles attached to this gate
-      if (meta && (meta.config.id === "gate-5x5" || meta.config.id === "gate-7x7" || meta.config.id === "start-finish-5x5")) {
+      if (meta && isGateConfig(meta.config)) {
         state.placedObjects.forEach((poleMeta) => {
           if (poleMeta.attachedTo === meta.id) {
             updateAttachedPolePosition(poleMeta);
@@ -1493,11 +1658,12 @@
       const meta = getMetaForObject(object);
       if (meta) {
         // If a gate is deleted, detach any poles attached to it
-        if (meta.config.id === "gate-5x5" || meta.config.id === "gate-7x7" || meta.config.id === "start-finish-5x5") {
+        if (isGateConfig(meta.config)) {
           state.placedObjects.forEach((poleMeta) => {
             if (poleMeta.attachedTo === meta.id) {
               poleMeta.attachedTo = null;
               poleMeta.attachmentSide = null;
+              poleMeta.attachedLevel = null;
             }
           });
         }
@@ -1595,6 +1761,12 @@
     }
     if (elements.attachSideSelect) {
       elements.attachSideSelect.addEventListener("change", handleAttachmentChange);
+    }
+    if (elements.attachLevelSelect) {
+      elements.attachLevelSelect.addEventListener("change", handleAttachmentChange);
+    }
+    if (elements.gateStackCount) {
+      elements.gateStackCount.addEventListener("change", handleGateStackChange);
     }
     if (elements.toggleReferencesButton) {
       elements.toggleReferencesButton.addEventListener("click", () => {

@@ -17,6 +17,7 @@ const OBJECT_CATALOG = [
     macroName: "Centered5x5StartFinishGate",
     width: 2.1,
     height: 2.1,
+    stackSpacingMeters: 1.7,
     visualWidth: 2.1, // Visual size matches actual size (gates touch when 2.1m apart)
     visualHeight: 2.1,
     altitude: 0,
@@ -31,6 +32,7 @@ const OBJECT_CATALOG = [
     macroName: "Centered5x5Gate",
     width: 2.1,
     height: 2.1,
+    stackSpacingMeters: 1.7,
     visualWidth: 2.4, // Visual size matches actual size (gates touch when 2.1m apart)
     visualHeight: 2.1,
     altitude: 0,

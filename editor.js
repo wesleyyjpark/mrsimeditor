@@ -290,6 +290,8 @@
     palette: document.getElementById("object-palette"),
     gridSizeInput: document.getElementById("grid-size-input"),
     rotationSnapInput: document.getElementById("rotation-snap-input"),
+    importButton: document.getElementById("import-button"),
+    importFileInput: document.getElementById("import-file-input"),
     exportButton: document.getElementById("export-button"),
     deleteButton: document.getElementById("delete-button"),
     duplicateButton: document.getElementById("duplicate-button"),
@@ -1395,6 +1397,276 @@
     canvas.requestRenderAll();
   }
 
+  function buildEditorMeta(meta) {
+    return `      <!-- EditorMeta: ${JSON.stringify(meta)} -->`;
+  }
+
+  function parseEditorMeta(commentText) {
+    if (!commentText) {
+      return null;
+    }
+    const marker = "EditorMeta:";
+    const index = commentText.indexOf(marker);
+    if (index === -1) {
+      return null;
+    }
+    const jsonText = commentText.slice(index + marker.length).trim();
+    if (!jsonText) {
+      return null;
+    }
+    try {
+      return JSON.parse(jsonText);
+    } catch (error) {
+      console.warn("Failed to parse EditorMeta comment", error);
+      return null;
+    }
+  }
+
+  function normalizeEditorAngle(angleDegrees) {
+    let angle = angleDegrees % 360;
+    if (angle < -180) {
+      angle += 360;
+    }
+    if (angle > 180) {
+      angle -= 360;
+    }
+    return angle;
+  }
+
+  function updateEntityCounterFromName(name) {
+    if (!name) {
+      return;
+    }
+    const match = name.match(/^(.*?)(\d+)$/);
+    if (!match) {
+      return;
+    }
+    const [, prefix, numberText] = match;
+    const number = Number.parseInt(numberText, 10);
+    if (!Number.isFinite(number)) {
+      return;
+    }
+    state.entityCounters[prefix] = Math.max(state.entityCounters[prefix] || 0, number);
+  }
+
+  async function addObjectFromImport(config, position, meta) {
+    const fabricObject = await createFabricObject(config);
+    fabricObject.data = { typeId: config.id };
+    applyVisualDefaults(fabricObject, config);
+    placeObjectAt(fabricObject, position);
+    fabricObject.setCoords();
+
+    canvas.add(fabricObject);
+
+    const metadata = {
+      id: meta?.id || createUniqueId(),
+      config,
+      fabricObject,
+      entityName: meta?.entityName || allocateEntityName(config.entityPrefix),
+      altitude: Number.isFinite(position.altitude) ? position.altitude : config.altitude ?? 0,
+      attachedTo: meta?.attachedTo || null,
+      attachmentSide: meta?.attachmentSide || null,
+      attachedLevel: meta?.attachedLevel || null,
+      stackCount: meta?.stackCount,
+    };
+
+    updateEntityCounterFromName(metadata.entityName);
+
+    state.placedObjects.push(metadata);
+    state.metaByObjectId.set(fabricObject, metadata);
+    updateObjectMetadata(fabricObject);
+    return metadata;
+  }
+
+  function invertGlobalTransform(finalX, finalY, globalOffsetX, globalOffsetY, globalRotationDegrees) {
+    const rotationRad = (globalRotationDegrees * Math.PI) / 180;
+    const cosR = Math.cos(rotationRad);
+    const sinR = Math.sin(rotationRad);
+    const adjustedX = finalX - globalOffsetX;
+    const adjustedY = finalY - globalOffsetY;
+    const rotatedForward = adjustedX;
+    const rotatedLateral = -adjustedY;
+    const forward = rotatedForward * cosR + rotatedLateral * sinR;
+    const lateral = -rotatedForward * sinR + rotatedLateral * cosR;
+    return { forward, lateral };
+  }
+
+  async function importXmlFromText(xmlText) {
+    if (!xmlText) {
+      return;
+    }
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(xmlText, "application/xml");
+    const parserError = doc.querySelector("parsererror");
+    if (parserError) {
+      alert("Could not parse XML file. Please check the file contents.");
+      return;
+    }
+
+    const shouldClear = state.placedObjects.length === 0
+      ? true
+      : confirm("Importing will replace the current scene. Continue?");
+    if (!shouldClear) {
+      return;
+    }
+    clearScene();
+
+    const commentNodes = Array.from(doc.childNodes).filter(
+      (node) => node.nodeType === Node.COMMENT_NODE
+    );
+    const globalMeta = commentNodes
+      .map((node) => parseEditorMeta(node.nodeValue || ""))
+      .find((meta) => meta && meta.scope === "global");
+
+    const globalOffsetX = Number.isFinite(globalMeta?.globalOffsetX)
+      ? globalMeta.globalOffsetX
+      : 0;
+    const globalOffsetY = Number.isFinite(globalMeta?.globalOffsetY)
+      ? globalMeta.globalOffsetY
+      : 0;
+    const globalRotation = Number.isFinite(globalMeta?.globalRotation)
+      ? globalMeta.globalRotation
+      : 0;
+
+    elements.globalOffsetX.value = globalOffsetX.toString();
+    elements.globalOffsetY.value = globalOffsetY.toString();
+    elements.globalRotation.value = globalRotation.toString();
+
+    const transformNodes = Array.from(doc.querySelectorAll("Transform")).filter((node) =>
+      node.querySelector(":scope > Entity")
+    );
+
+    const compositeSeen = new Set();
+    const stackSeen = new Set();
+    const importMetaById = new Map();
+
+    for (const transform of transformNodes) {
+      const entity = transform.querySelector(":scope > Entity");
+      if (!entity) {
+        continue;
+      }
+
+      let meta = null;
+      let prevNode = transform.previousSibling;
+      while (prevNode && prevNode.nodeType === Node.TEXT_NODE && !prevNode.nodeValue?.trim()) {
+        prevNode = prevNode.previousSibling;
+      }
+      if (prevNode && prevNode.nodeType === Node.COMMENT_NODE) {
+        meta = parseEditorMeta(prevNode.nodeValue || "");
+      }
+
+      if (meta?.compositeGroupId) {
+        if (compositeSeen.has(meta.compositeGroupId)) {
+          continue;
+        }
+        compositeSeen.add(meta.compositeGroupId);
+      }
+
+      if (meta?.stackGroupId) {
+        if (stackSeen.has(meta.stackGroupId)) {
+          continue;
+        }
+        stackSeen.add(meta.stackGroupId);
+      }
+
+      const finalX = Number.parseFloat(transform.getAttribute("x") || "0");
+      const finalY = Number.parseFloat(transform.getAttribute("y") || "0");
+      const altitude = Number.parseFloat(transform.getAttribute("z") || "0");
+      const angleDegrees = Number.parseFloat(transform.getAttribute("angleDegrees") || "0");
+
+      const { forward, lateral } = invertGlobalTransform(
+        finalX,
+        finalY,
+        globalOffsetX,
+        globalOffsetY,
+        globalRotation
+      );
+
+      let typeConfig = null;
+      if (meta?.typeId) {
+        typeConfig = lookup[meta.typeId] || null;
+      }
+
+      if (!typeConfig) {
+        const instance = entity.querySelector("Instance");
+        const include = entity.querySelector("Include");
+        const macroName = instance?.getAttribute("macro");
+        const includeFile = include?.getAttribute("file");
+        typeConfig =
+          catalog.find((entry) => entry.macroName === macroName) ||
+          catalog.find((entry) => entry.includeFile === includeFile) ||
+          null;
+      }
+
+      if (!typeConfig) {
+        console.warn("Skipping unknown object in import:", entity.getAttribute("name"));
+        continue;
+      }
+
+      const position = {
+        x: lateral,
+        y: forward,
+        angle: normalizeEditorAngle(angleDegrees - globalRotation - 90),
+        altitude,
+      };
+
+      const importedMeta = await addObjectFromImport(typeConfig, position, {
+        id: meta?.id,
+        entityName: meta?.entityName || entity.getAttribute("name"),
+        attachedTo: meta?.attachedTo,
+        attachmentSide: meta?.attachmentSide,
+        attachedLevel: meta?.attachedLevel,
+        stackCount: meta?.stackCount,
+      });
+
+      if (meta?.id) {
+        importMetaById.set(meta.id, importedMeta);
+      }
+    }
+
+    // Restore attachments after all objects exist
+    state.placedObjects.forEach((entry) => {
+      if (!entry.attachedTo) {
+        return;
+      }
+      const target = importMetaById.get(entry.attachedTo);
+      if (!target) {
+        entry.attachedTo = null;
+        entry.attachmentSide = null;
+        entry.attachedLevel = null;
+      } else {
+        entry.attachedTo = target.id;
+      }
+      updateAttachedPolePosition(entry);
+    });
+
+    resnapAll();
+    refreshSelectionPanel();
+    canvas.requestRenderAll();
+  }
+
+  function handleImportButtonClick() {
+    if (elements.importFileInput) {
+      elements.importFileInput.value = "";
+      elements.importFileInput.click();
+    }
+  }
+
+  function handleImportFileChange(event) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      importXmlFromText(reader.result);
+    };
+    reader.onerror = () => {
+      alert("Failed to read the XML file.");
+    };
+    reader.readAsText(file);
+  }
+
   /**
    * Build XML string from current scene objects.
    */
@@ -1408,6 +1680,14 @@
 
     const lines = [];
     lines.push("<Simulation>");
+    lines.push(
+      buildEditorMeta({
+        scope: "global",
+        globalOffsetX: offsetForward,
+        globalOffsetY: offsetLateral,
+        globalRotation: globalRotationDegrees,
+      })
+    );
     lines.push('  <Include file="/Data/Simulations/Multirotor/Locations/BaylandsPark.xml"/>');
     lines.push('  <Include file="/Data/Simulations/Multirotor/DroneTrackInstanceGroups.xml"/>');
     lines.push('  <Include file="/Data/Simulations/Multirotor/Gates/PoleGates.xml"/>');
@@ -1490,12 +1770,30 @@
       const finalAngle = normalizeAngle(object.angle + globalRotationDegrees + 90);
       const altitude = entry.altitude || 0;
 
+      const editorMeta = {
+        typeId: entry.config.id,
+        id: entry.id,
+        entityName: entry.entityName,
+        attachedTo: entry.attachedTo || null,
+        attachmentSide: entry.attachmentSide || null,
+        attachedLevel: entry.attachedLevel || null,
+        stackCount: entry.stackCount ?? null,
+      };
+
       const stackCount = getGateStackCount(entry);
       if (isStackableGateConfig(entry.config) && stackCount > 1) {
         const stackSpacing = getGateStackSpacing(entry);
         for (let i = 1; i <= stackCount; i += 1) {
           const stackAltitude = altitude + stackSpacing * (i - 1);
           const stackEntityName = i === 1 ? entry.entityName : `${entry.entityName}_stack${i}`;
+          lines.push(
+            buildEditorMeta({
+              ...editorMeta,
+              stackGroupId: entry.id,
+              stackIndex: i,
+              stackCount,
+            })
+          );
           lines.push(
             `      <Transform x="${finalX.toFixed(3)}" y="${finalY.toFixed(
               3
@@ -1520,6 +1818,14 @@
         entry.config.compositeParts.forEach((part, index) => {
           const partAltitude = altitude + (part.altitude || 0);
           const partEntityName = index === 0 ? entry.entityName : `${entry.entityName}_${index + 1}`;
+          lines.push(
+            buildEditorMeta({
+              ...editorMeta,
+              compositeGroupId: entry.id,
+              compositeIndex: index + 1,
+              compositeCount: entry.config.compositeParts.length,
+            })
+          );
           
           lines.push(
             `      <Transform x="${finalX.toFixed(3)}" y="${finalY.toFixed(
@@ -1541,13 +1847,14 @@
         });
       } else {
         // Standard single object export
-        lines.push(
-          `      <Transform x="${finalX.toFixed(3)}" y="${finalY.toFixed(
-            3
-          )}" z="${altitude.toFixed(3)}" angleDegrees="${finalAngle.toFixed(
-            1
-          )}" rz="-1">`
-        );
+      lines.push(buildEditorMeta(editorMeta));
+      lines.push(
+        `      <Transform x="${finalX.toFixed(3)}" y="${finalY.toFixed(
+          3
+        )}" z="${altitude.toFixed(3)}" angleDegrees="${finalAngle.toFixed(
+          1
+        )}" rz="-1">`
+      );
         lines.push(`        <Entity name="${entry.entityName}">`);
 
         if (entry.config.placement === "macro") {
@@ -1740,6 +2047,12 @@
       sanitizeSettings();
       resnapAll();
     });
+    if (elements.importButton) {
+      elements.importButton.addEventListener("click", handleImportButtonClick);
+    }
+    if (elements.importFileInput) {
+      elements.importFileInput.addEventListener("change", handleImportFileChange);
+    }
     elements.exportButton.addEventListener("click", exportXml);
     elements.deleteButton.addEventListener("click", deleteSelected);
     elements.duplicateButton.addEventListener("click", duplicateSelected);

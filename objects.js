@@ -142,6 +142,7 @@ const OBJECT_CATALOG = [
     width: 2,
     height: 4,
     altitude: 0, // Will be set when attached to top of gate
+    attachHeightOffsetMeters: 0.3,
     color: "#66bb6a",
     placement: "macro",
     icon: FLAG_ICON,

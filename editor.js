@@ -1182,11 +1182,16 @@
       offsetY = -Math.sin(angleRad) * offsetDistance;
     }
     
+    const heightOffset =
+      typeof poleMeta?.config?.attachHeightOffsetMeters === "number"
+        ? poleMeta.config.attachHeightOffsetMeters
+        : 0;
+
     return {
       x: gatePos.x + offsetX,
       y: gatePos.y + offsetY,
       angle: gateAngle,
-      altitude: gateBaseAltitude + gateHeight + stackSpacing * (stackLevel - 1),
+      altitude: gateBaseAltitude + gateHeight + heightOffset + stackSpacing * (stackLevel - 1),
     };
   }
 

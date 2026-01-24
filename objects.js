@@ -17,6 +17,8 @@ const OBJECT_CATALOG = [
     macroName: "Centered5x5StartFinishGate",
     width: 2.1,
     height: 2.1,
+    footprintWidth: 2.1,
+    footprintHeight: 0.2,
     stackSpacingMeters: 1.7,
     visualWidth: 2.1, // Visual size matches actual size (gates touch when 2.1m apart)
     visualHeight: 2.1,
@@ -24,6 +26,8 @@ const OBJECT_CATALOG = [
     color: "#ff7043",
     placement: "macro",
     icon: GATE_ICON,
+    renderStyle: "outline",
+    previewImage: "",
   },
   {
     id: "gate-5x5",
@@ -32,6 +36,8 @@ const OBJECT_CATALOG = [
     macroName: "Centered5x5Gate",
     width: 2.1,
     height: 2.1,
+    footprintWidth: 2.1,
+    footprintHeight: 0.2,
     stackSpacingMeters: 1.7,
     visualWidth: 2.4, // Visual size matches actual size (gates touch when 2.1m apart)
     visualHeight: 2.1,
@@ -39,6 +45,8 @@ const OBJECT_CATALOG = [
     color: "#42a5f5",
     placement: "macro",
     icon: GATE_ICON,
+    renderStyle: "outline",
+    previewImage: "assets/gate-image.png",
   },
   {
     id: "gate-7x7",
@@ -47,12 +55,16 @@ const OBJECT_CATALOG = [
     includeFile: "/Data/Simulations/Multirotor/7x7Gate.xml",
     width: 2.1,
     height: 2.1,
+    footprintWidth: 2.1,
+    footprintHeight: 0.2,
     visualWidth: 2.1, // Visual size matches actual size
     visualHeight: 2.1,
     altitude: 0,
     color: "#26a69a",
     placement: "include",
     icon: GATE_ICON,
+    renderStyle: "outline",
+    previewImage: "",
   },
   {
     id: "flag-pass-right",
@@ -65,6 +77,8 @@ const OBJECT_CATALOG = [
     color: "#ab47bc",
     placement: "include",
     icon: FLAG_ICON,
+    renderStyle: "point",
+    previewImage: "",
   },
   {
     id: "flag-pass-left",
@@ -77,6 +91,8 @@ const OBJECT_CATALOG = [
     color: "#7e57c2",
     placement: "include",
     icon: FLAG_ICON,
+    renderStyle: "point",
+    previewImage: "",
   },
   {
     id: "pipe-double-cube",
@@ -91,6 +107,9 @@ const OBJECT_CATALOG = [
     color: "#ffca28",
     placement: "macro",
     icon: DOUBLE_CUBE_ICON,
+    renderStyle: "rect",
+    labelText: "2",
+    previewImage: "assets/double-cube-image.png",
   },
   {
     id: "pipe-cube",
@@ -105,6 +124,9 @@ const OBJECT_CATALOG = [
     color: "#fdd835",
     placement: "macro",
     icon: CUBE_ICON,
+    renderStyle: "rect",
+    labelText: "1",
+    previewImage: "assets/cube-image.png",
   },
   {
     id: "pipe-ladder",
@@ -119,6 +141,9 @@ const OBJECT_CATALOG = [
     color: "#ef5350",
     placement: "macro",
     icon: QUAD_LADDER_ICON,
+    renderStyle: "rectWithCenterLine",
+    labelText: "2",
+    previewImage: "assets/ladder-image.png",
   },
   {
     id: "pipe-quadruple-ladder",
@@ -133,6 +158,9 @@ const OBJECT_CATALOG = [
     color: "#d32f2f",
     placement: "macro",
     icon: QUAD_LADDER_ICON,
+    renderStyle: "rectWithCenterLine",
+    labelText: "4",
+    previewImage: "assets/quad.png",
   },
   {
     id: "padded-pole",
@@ -147,6 +175,8 @@ const OBJECT_CATALOG = [
     placement: "macro",
     icon: FLAG_ICON,
     anchorOffsetMeters: 0,
+    renderStyle: "point",
+    previewImage: "assets/pole-image.png",
   },
   {
     id: "pipe-flag",
@@ -160,6 +190,8 @@ const OBJECT_CATALOG = [
     placement: "composite", // Special placement type for composite objects
     icon: FLAG_ICON,
     anchorOffsetMeters: 0,
+    renderStyle: "point",
+    previewImage: "assets/pole-image.png",
     compositeParts: [
       { macroName: "PaddedPole", altitude: 0 },
       { macroName: "PaddedPole", altitude: 2 },

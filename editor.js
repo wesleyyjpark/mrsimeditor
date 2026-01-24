@@ -315,6 +315,8 @@
     selectedPositionX: document.getElementById("selected-position-x"),
     selectedPositionY: document.getElementById("selected-position-y"),
     selectedRotation: document.getElementById("selected-rotation"),
+    selectedPreview: document.getElementById("selected-preview"),
+    selectedPreviewWrapper: document.getElementById("selected-preview-wrapper"),
     attachmentControls: document.getElementById("attachment-controls"),
     attachGateSelect: document.getElementById("attach-gate-select"),
     attachSideSelect: document.getElementById("attach-side-select"),
@@ -744,12 +746,173 @@
    * Create a Fabric.js object for each of the objects in the catalog
    */
   async function createFabricObject(config) {
-    // Use visual size for display, actual size for export calculations
+    // Use visual size for icons, footprint size for shape rendering
     const visualWidth = config.visualWidth !== undefined ? config.visualWidth : config.width;
     const visualHeight = config.visualHeight !== undefined ? config.visualHeight : config.height;
+    const footprintWidth =
+      config.footprintWidth !== undefined ? config.footprintWidth : config.width;
+    const footprintHeight =
+      config.footprintHeight !== undefined ? config.footprintHeight : config.height;
     const widthPx = visualWidth * PIXELS_PER_METER;
     const heightPx = visualHeight * PIXELS_PER_METER;
+    const footprintWidthPx = footprintWidth * PIXELS_PER_METER;
+    const footprintHeightPx = footprintHeight * PIXELS_PER_METER;
     const shadow = config.shadow || null;
+    const renderStyle = config.renderStyle || null;
+
+    if (renderStyle) {
+      const baseColor = config.fillColor || config.color || "#3f51b5";
+      if (renderStyle === "point") {
+        return Promise.resolve(
+          new fabric.Circle({
+            radius: Math.max(4, Math.round(PIXELS_PER_METER * 0.12)),
+            fill: baseColor,
+            stroke: baseColor,
+            strokeWidth: 1,
+            originX: "center",
+            originY: "center",
+            selectable: true,
+            hasControls: true,
+            hasBorders: false,
+            lockScalingX: true,
+            lockScalingY: true,
+            perPixelTargetFind: true,
+            strokeUniform: true,
+            shadow,
+          })
+        );
+      }
+
+      if (renderStyle === "outline") {
+        return Promise.resolve(
+          new fabric.Rect({
+            width: footprintWidthPx,
+            height: footprintHeightPx,
+            fill: "transparent",
+            stroke: baseColor,
+            strokeWidth: 2,
+            originX: "center",
+            originY: "center",
+            selectable: true,
+            hasControls: true,
+            hasBorders: false,
+            lockScalingX: true,
+            lockScalingY: true,
+            perPixelTargetFind: true,
+            strokeUniform: true,
+            shadow,
+          })
+        );
+      }
+
+      if (renderStyle === "rect") {
+        const rect = new fabric.Rect({
+          width: footprintWidthPx,
+          height: footprintHeightPx,
+          fill: hexToRgba(baseColor, 0.35),
+          stroke: baseColor,
+          strokeWidth: 1,
+          originX: "center",
+          originY: "center",
+          selectable: false,
+          evented: false,
+          strokeUniform: true,
+        });
+        if (config.labelText) {
+          const label = new fabric.Text(config.labelText, {
+            fontSize: 18,
+            fill: baseColor,
+            originX: "center",
+            originY: "center",
+            selectable: false,
+            evented: false,
+          });
+          return Promise.resolve(
+            new fabric.Group([rect, label], {
+              originX: "center",
+              originY: "center",
+              selectable: true,
+              hasControls: true,
+              hasBorders: false,
+              lockScalingX: true,
+              lockScalingY: true,
+              perPixelTargetFind: true,
+              strokeUniform: true,
+              shadow,
+            })
+          );
+        }
+        return Promise.resolve(
+          new fabric.Group([rect], {
+            originX: "center",
+            originY: "center",
+            selectable: true,
+            hasControls: true,
+            hasBorders: false,
+            lockScalingX: true,
+            lockScalingY: true,
+            perPixelTargetFind: true,
+            strokeUniform: true,
+            shadow,
+          })
+        );
+      }
+
+      if (renderStyle === "rectWithCenterLine") {
+        const rect = new fabric.Rect({
+          width: footprintWidthPx,
+          height: footprintHeightPx,
+          fill: "transparent",
+          stroke: baseColor,
+          strokeWidth: 1,
+          originX: "center",
+          originY: "center",
+          selectable: false,
+          evented: false,
+          strokeUniform: true,
+        });
+        const line = new fabric.Line(
+          [-footprintWidthPx / 2, 0, footprintWidthPx / 2, 0],
+          {
+            stroke: baseColor,
+            strokeWidth: 4,
+            originX: "center",
+            originY: "center",
+            selectable: false,
+            evented: false,
+            strokeUniform: true,
+          }
+        );
+        const parts = [rect, line];
+        if (config.labelText) {
+          const label = new fabric.Text(config.labelText, {
+            fontSize: 16,
+            fill: baseColor,
+            originX: "right",
+            originY: "top",
+            left: footprintWidthPx / 2 - 4,
+            top: -footprintHeightPx / 2 + 2,
+            selectable: false,
+            evented: false,
+          });
+          parts.push(label);
+        }
+        return Promise.resolve(
+          new fabric.Group(parts, {
+            originX: "center",
+            originY: "center",
+            selectable: true,
+            hasControls: true,
+            hasBorders: false,
+            lockScalingX: true,
+            lockScalingY: true,
+            perPixelTargetFind: true,
+            strokeUniform: true,
+            shadow,
+          })
+        );
+      }
+    }
 
     if (config.icon) {
       return new Promise((resolve, reject) => {
@@ -1120,6 +1283,17 @@
     }
     if (elements.selectedRotation) {
       elements.selectedRotation.textContent = angle.toFixed(1);
+    }
+
+    if (elements.selectedPreview && elements.selectedPreviewWrapper) {
+      const previewPath = meta.config.previewImage || "";
+      if (previewPath) {
+        elements.selectedPreview.src = previewPath;
+        elements.selectedPreviewWrapper.classList.remove("hidden");
+      } else {
+        elements.selectedPreview.src = "";
+        elements.selectedPreviewWrapper.classList.add("hidden");
+      }
     }
 
     // Update attachment controls

@@ -23,6 +23,7 @@
   const DEFAULT_GRID_SIZE_METERS = 0.7;
   const MAJOR_GRID_METERS = 2.1;
   const DEFAULT_FORWARD_OFFSET_METERS = 16;
+  const SNAP_GRID_FACTOR = 0.5;
   const ZOOM_MIN = 0.4;
   const ZOOM_MAX = 2.5;
   const ZOOM_STEP = 0.1;
@@ -216,13 +217,15 @@
   const state = {
     gridSizeMeters: DEFAULT_GRID_SIZE_METERS,
     rotationSnap: 5,
+    snappingEnabled: true,
+    snapDisabledByShift: false,
     entityCounters: {},
     placedObjects: [],
     metaByObjectId: new Map(),
     activeMeta: null,
     referenceObjects: [],
     showReferenceLayout: true,
-    zoom: 1,
+    zoom: 0.5,
     sidebarsHidden: false,
     ruler: {
       enabled: false,
@@ -306,6 +309,7 @@
     globalOffsetX: document.getElementById("global-offset-x"),
     globalOffsetY: document.getElementById("global-offset-y"),
     globalRotation: document.getElementById("global-rotation"),
+    toggleSnappingButton: document.getElementById("toggle-snapping"),
     selectedNone: document.getElementById("selected-none"),
     selectedDetails: document.getElementById("selected-details"),
     selectedLabel: document.getElementById("selected-label"),
@@ -513,6 +517,20 @@
     elements.measureToggle.classList.toggle("primary", state.ruler.enabled);
   }
 
+  function updateSnappingUI() {
+    if (!elements.toggleSnappingButton) {
+      return;
+    }
+    elements.toggleSnappingButton.textContent = state.snappingEnabled
+      ? "Snapping On"
+      : "Snapping Off";
+    elements.toggleSnappingButton.setAttribute(
+      "aria-pressed",
+      state.snappingEnabled ? "true" : "false"
+    );
+    elements.toggleSnappingButton.classList.toggle("primary", state.snappingEnabled);
+  }
+
   function ensureRulerLine(startPoint, endPoint) {
     if (!state.ruler.line) {
       state.ruler.line = new fabric.Line(
@@ -661,24 +679,29 @@
    * Snap object position and rotation to configured increments.
    */
   function snapObjectTransform(object) {
+    if (!state.snappingEnabled || state.snapDisabledByShift) {
+      object.setCoords();
+      return;
+    }
     const origin = getGridOrigin();
     const gridPx = state.gridSizeMeters * PIXELS_PER_METER;
+    const snapGridPx = Math.max(4, gridPx * SNAP_GRID_FACTOR);
     const anchorOffset = getAnchorOffsetPx(object);
     const baseTop = object.top - anchorOffset;
     
     // Snap tolerance: if within this many pixels of a snap point, snap to it
     // Increased to 40% of grid size for more forgiving snapping
-    const SNAP_TOLERANCE = gridPx * 0.4;
+    const SNAP_TOLERANCE = snapGridPx * 0.4;
     
     // Calculate current position relative to grid
     const currentX = object.left - origin.x;
     const currentY = origin.y - baseTop;
     
     // Find nearest grid point
-    const gridX = Math.round(currentX / gridPx);
-    const gridY = Math.round(currentY / gridPx);
-    const snappedXPos = gridX * gridPx;
-    const snappedYPos = gridY * gridPx;
+    const gridX = Math.round(currentX / snapGridPx);
+    const gridY = Math.round(currentY / snapGridPx);
+    const snappedXPos = gridX * snapGridPx;
+    const snappedYPos = gridY * snapGridPx;
     
     // Check distance to nearest snap point
     const distanceX = Math.abs(currentX - snappedXPos);
@@ -734,6 +757,14 @@
       const baseColor = config.fillColor || config.color || "#3f51b5";
       object.set({
         fill: hexToRgba(baseColor, 0.65),
+      });
+    }
+
+    // disables manipulation controls, the fabric specfic ones
+    if (config.renderStyle === "point") {
+      object.set({
+        hasControls: false,
+        hasBorders: false,
       });
     }
 
@@ -2083,7 +2114,7 @@
    */
   function resetView() {
     canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
-    state.zoom = 1;
+    state.zoom = 0.5;
     updateZoomUI();
     updateGridBackground();
     canvas.renderAll();
@@ -2226,6 +2257,12 @@
       sanitizeSettings();
       resnapAll();
     });
+    if (elements.toggleSnappingButton) {
+      elements.toggleSnappingButton.addEventListener("click", () => {
+        state.snappingEnabled = !state.snappingEnabled;
+        updateSnappingUI();
+      });
+    }
     if (elements.importButton) {
       elements.importButton.addEventListener("click", handleImportButtonClick);
     }
@@ -2308,6 +2345,9 @@
         }
         return;
       }
+      if ((event.code === "ShiftLeft" || event.code === "ShiftRight") && !isEditableElement(event.target)) {
+        state.snapDisabledByShift = true;
+      }
       if (event.code !== "Space" || isEditableElement(event.target)) {
         return;
       }
@@ -2319,6 +2359,9 @@
     };
 
     const handleKeyUp = (event) => {
+      if (event.code === "ShiftLeft" || event.code === "ShiftRight") {
+        state.snapDisabledByShift = false;
+      }
       if (event.code !== "Space") {
         return;
       }
@@ -2339,6 +2382,9 @@
    * Resnap all placed objects when settings change.
    */
   function resnapAll() {
+    if (!state.snappingEnabled) {
+      return;
+    }
     state.placedObjects.forEach((entry) => {
       snapObjectTransform(entry.fabricObject);
       updateObjectMetadata(entry.fabricObject);
@@ -2381,7 +2427,8 @@
     updateSidebarsVisibility();
     updateRulerUI();
     updatePanCursor();
-    updateZoomUI();
+    applyZoom(state.zoom);
+    updateSnappingUI();
     updateGridBackground();
     drawOriginGuides();
     await createReferenceObjects();

@@ -1644,7 +1644,7 @@
   }
 
   function updateEntityCounterFromName(name) {
-    if (!name) {
+    if (!name || name === "Track") {
       return;
     }
     const match = name.match(/^(.*?)(\d+)$/);
@@ -1668,11 +1668,15 @@
 
     canvas.add(fabricObject);
 
+    const safeEntityName =
+      meta?.entityName && meta.entityName !== "Track"
+        ? meta.entityName
+        : allocateEntityName(config.entityPrefix);
     const metadata = {
       id: meta?.id || createUniqueId(),
       config,
       fabricObject,
-      entityName: meta?.entityName || allocateEntityName(config.entityPrefix),
+      entityName: safeEntityName,
       altitude: Number.isFinite(position.altitude) ? position.altitude : config.altitude ?? 0,
       attachedTo: meta?.attachedTo || null,
       attachmentSide: meta?.attachmentSide || null,
@@ -1808,10 +1812,22 @@
           null;
       }
 
+      if (
+        entity.getAttribute("name") === "Track" &&
+        !meta?.typeId &&
+        !entity.querySelector("Instance") &&
+        !entity.querySelector("Include")
+      ) {
+        continue;
+      }
+
       if (!typeConfig) {
         console.warn("Skipping unknown object in import:", entity.getAttribute("name"));
         continue;
       }
+
+      const rawEntityName = meta?.entityName || entity.getAttribute("name") || "";
+      const entityName = rawEntityName === "Track" ? "" : rawEntityName;
 
       const position = {
         x: lateral,
@@ -1822,7 +1838,7 @@
 
       const importedMeta = await addObjectFromImport(typeConfig, position, {
         id: meta?.id,
-        entityName: meta?.entityName || entity.getAttribute("name"),
+        entityName,
         attachedTo: meta?.attachedTo,
         attachmentSide: meta?.attachmentSide,
         attachedLevel: meta?.attachedLevel,

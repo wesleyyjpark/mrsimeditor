@@ -28,13 +28,36 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 0.75rem 1.25rem;
-  background: var(--panel-bg);
+  background: #ffffff;
   border-bottom: 1px solid var(--border);
+  color: var(--primary);
+}
+
+.app-header button {
+  background: #ffffff;
+  color: var(--primary);
+}
+
+.app-header button.primary {
+  background: var(--primary);
+  color: var(--primary-contrast);
 }
 
 .app-header h1 {
   margin: 0;
   font-size: 1.25rem;
+}
+
+.app-title {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.app-title img {
+  height: 28px;
+  width: auto;
+  display: block;
 }
 
 .header-actions {
@@ -243,6 +266,10 @@ button.secondary:hover {
 }
 
 .selected-details.hidden {
+  display: none;
+}
+
+.hidden {
   display: none;
 }
 

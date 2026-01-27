@@ -14,7 +14,10 @@
   </head>
   <body>
     <header class="app-header">
-      <h1>MRSim Track Editor (Prototype)</h1>
+      <h1 class="app-title">
+        <img src="assets/MRSIM_Logo.png" alt="MRSIM logo" />
+        <span>Track Editor (Prototype)</span>
+      </h1>
       <div class="header-actions">
         <button id="import-button" type="button">Import XML</button>
         <button id="export-button" class="primary">Export XML</button>
@@ -154,24 +157,51 @@
               </div>
               <div id="attachment-controls" class="attachment-controls hidden">
                 <label class="field">
-                  <span>Attach to Gate</span>
-                  <select id="attach-gate-select">
+                  <span>Attach Mode</span>
+                  <select id="attach-mode-select">
                     <option value="">None (Standalone)</option>
+                    <option value="gate">Gate</option>
+                    <option value="cube">Cube</option>
                   </select>
                 </label>
-                <label class="field">
-                  <span>Attachment Side</span>
-                  <select id="attach-side-select">
-                    <option value="left">Left</option>
-                    <option value="right">Right</option>
-                  </select>
-                </label>
-                <label class="field">
-                  <span>Attach Gate Level</span>
-                  <select id="attach-level-select">
-                    <option value="1">Gate 1</option>
-                  </select>
-                </label>
+                <div id="gate-attachment-fields">
+                  <label class="field">
+                    <span>Attach to Gate</span>
+                    <select id="attach-gate-select">
+                      <option value="">None (Standalone)</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span>Attachment Side</span>
+                    <select id="attach-side-select">
+                      <option value="left">Left</option>
+                      <option value="right">Right</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span>Attach Gate Level</span>
+                    <select id="attach-level-select">
+                      <option value="1">Gate 1</option>
+                    </select>
+                  </label>
+                </div>
+                <div id="cube-attachment-fields">
+                  <label class="field">
+                    <span>Attach to Cube</span>
+                    <select id="attach-cube-select">
+                      <option value="">None (Standalone)</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span>Cube Corner</span>
+                    <select id="attach-corner-select">
+                      <option value="1">Corner 1</option>
+                      <option value="2">Corner 2</option>
+                      <option value="3">Corner 3</option>
+                      <option value="4">Corner 4</option>
+                    </select>
+                  </label>
+                </div>
               </div>
               <div class="selected-actions">
                 <button id="duplicate-button" type="button">Duplicate</button>

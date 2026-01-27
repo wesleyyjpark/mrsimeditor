@@ -322,8 +322,13 @@
     selectedPreview: document.getElementById("selected-preview"),
     selectedPreviewWrapper: document.getElementById("selected-preview-wrapper"),
     attachmentControls: document.getElementById("attachment-controls"),
+    attachModeSelect: document.getElementById("attach-mode-select"),
+    gateAttachmentFields: document.getElementById("gate-attachment-fields"),
+    cubeAttachmentFields: document.getElementById("cube-attachment-fields"),
     attachGateSelect: document.getElementById("attach-gate-select"),
+    attachCubeSelect: document.getElementById("attach-cube-select"),
     attachSideSelect: document.getElementById("attach-side-select"),
+    attachCornerSelect: document.getElementById("attach-corner-select"),
     attachLevelSelect: document.getElementById("attach-level-select"),
     gateStackControls: document.getElementById("gate-stack-controls"),
     gateStackCount: document.getElementById("gate-stack-count"),
@@ -1141,14 +1146,23 @@
    * Get all gates in the scene for attachment selection.
    */
   const GATE_TYPE_IDS = new Set(["gate-5x5", "gate-7x7", "start-finish-5x5"]);
+  const CUBE_TYPE_IDS = new Set(["pipe-cube", "pipe-double-cube"]);
   const STACKABLE_GATE_TYPE_IDS = new Set(["gate-5x5", "start-finish-5x5"]);
 
   function getGatesForAttachment() {
     return state.placedObjects.filter((entry) => isGateConfig(entry.config));
   }
 
+  function getCubesForAttachment() {
+    return state.placedObjects.filter((entry) => isCubeConfig(entry.config));
+  }
+
   function isGateConfig(config) {
     return Boolean(config && GATE_TYPE_IDS.has(config.id));
+  }
+
+  function isCubeConfig(config) {
+    return Boolean(config && CUBE_TYPE_IDS.has(config.id));
   }
 
   function isStackableGateConfig(config) {
@@ -1179,6 +1193,15 @@
   /**
    * Update attachment controls UI.
    */
+  function updateAttachmentModeUI(mode) {
+    if (elements.gateAttachmentFields) {
+      elements.gateAttachmentFields.classList.toggle("hidden", mode !== "gate");
+    }
+    if (elements.cubeAttachmentFields) {
+      elements.cubeAttachmentFields.classList.toggle("hidden", mode !== "cube");
+    }
+  }
+
   function updateAttachmentControls(meta) {
     if (!elements.attachmentControls || !elements.attachGateSelect) {
       return;
@@ -1191,6 +1214,12 @@
     }
 
     elements.attachmentControls.classList.remove("hidden");
+
+    const resolvedMode = meta.attachedCubeTo ? "cube" : meta.attachedTo ? "gate" : "";
+    if (elements.attachModeSelect) {
+      elements.attachModeSelect.value = resolvedMode;
+    }
+    updateAttachmentModeUI(resolvedMode);
 
     // Populate gate select
     const gates = getGatesForAttachment();
@@ -1213,12 +1242,38 @@
       select.value = "";
     }
 
+    // Populate cube select
+    if (elements.attachCubeSelect) {
+      const cubes = getCubesForAttachment();
+      elements.attachCubeSelect.innerHTML = '<option value="">None (Standalone)</option>';
+      cubes.forEach((cubeMeta) => {
+        const option = document.createElement("option");
+        option.value = cubeMeta.id;
+        option.textContent = `${cubeMeta.config.label} (${cubeMeta.entityName})`;
+        elements.attachCubeSelect.appendChild(option);
+      });
+      if (meta.attachedCubeTo) {
+        elements.attachCubeSelect.value = meta.attachedCubeTo;
+      } else {
+        elements.attachCubeSelect.value = "";
+      }
+    }
+
+    if (elements.attachCornerSelect) {
+      const cornerValue = meta.attachedCubeCorner || "1";
+      elements.attachCornerSelect.value = cornerValue.toString();
+    }
+
     const gateMeta = meta.attachedTo
       ? state.placedObjects.find((entry) => entry.id === meta.attachedTo)
       : null;
     const clampedLevel = updateAttachmentLevelOptions(gateMeta, meta.attachedLevel);
     if (gateMeta) {
       meta.attachedLevel = clampedLevel;
+    }
+
+    if (meta.attachedTo || meta.attachedCubeTo) {
+      updateAttachedPolePosition(meta);
     }
   }
 
@@ -1400,18 +1455,105 @@
     };
   }
 
+  function calculateCubeCornerPosition(cubeMeta, corner, inwardMeters = 0) {
+    const cubePos = getObjectPositionMeters(cubeMeta.fabricObject);
+    const cubeAngle = cubeMeta.fabricObject.angle;
+    const cubeWidth = cubeMeta.config.footprintWidth || cubeMeta.config.width || 2.1;
+    const cubeHeight = cubeMeta.config.footprintHeight || cubeMeta.config.height || 2.1;
+    const cubeAltitude = cubeMeta.altitude || 0;
+    const baseHeight = cubeMeta.config.height || 2.1;
+    const cubeVerticalHeight =
+      cubeMeta.config.id === "pipe-double-cube" ? baseHeight * 2 : baseHeight;
+    const halfW = cubeWidth / 2;
+    const halfH = cubeHeight / 2;
+    const angleRad = (cubeAngle * Math.PI) / 180;
+    const cornerIndex = Number.parseInt(corner, 10);
+    const resolvedCorner = Number.isFinite(cornerIndex) ? cornerIndex : 1;
+
+    // Corner mapping:
+    // 1: top-left, 2: top-right, 3: bottom-right, 4: bottom-left (in cube local space)
+    const localCorners = {
+      1: { x: -halfW, y: halfH },
+      2: { x: halfW, y: halfH },
+      3: { x: halfW, y: -halfH },
+      4: { x: -halfW, y: -halfH },
+    };
+    const local = localCorners[resolvedCorner] || localCorners[1];
+
+    const rotatedX = local.x * Math.cos(angleRad) - local.y * Math.sin(angleRad);
+    const rotatedY = local.x * Math.sin(angleRad) + local.y * Math.cos(angleRad);
+
+    let shiftX = 0;
+    let shiftY = 0;
+    if (inwardMeters > 0) {
+      const dirLocalX = -Math.sign(local.x || 1);
+      const dirLocalY = -Math.sign(local.y || 1);
+      const dirScale = inwardMeters / Math.sqrt(2);
+      const dirLocal = { x: dirLocalX * dirScale, y: dirLocalY * dirScale };
+      shiftX = dirLocal.x * Math.cos(angleRad) - dirLocal.y * Math.sin(angleRad);
+      shiftY = dirLocal.x * Math.sin(angleRad) + dirLocal.y * Math.cos(angleRad);
+    }
+
+    return {
+      x: cubePos.x + rotatedX + shiftX,
+      y: cubePos.y + rotatedY + shiftY,
+      angle: cubeAngle,
+      altitude: cubeAltitude + cubeVerticalHeight,
+    };
+  }
+
   /**
    * Update pole position when attached to gate.
    */
   function updateAttachedPolePosition(poleMeta) {
-    if (!poleMeta.attachedTo) {
+    if (!poleMeta.attachedTo && !poleMeta.attachedCubeTo) {
       // Not attached, restore normal opacity
       if (poleMeta.fabricObject) {
         poleMeta.fabricObject.set({ opacity: 1 });
       }
       return;
     }
-    
+
+    if (poleMeta.attachedCubeTo) {
+      const cubeMeta = state.placedObjects.find((m) => m.id === poleMeta.attachedCubeTo);
+      if (!cubeMeta) {
+        poleMeta.attachedCubeTo = null;
+        poleMeta.attachedCubeCorner = null;
+        if (poleMeta.fabricObject) {
+          poleMeta.fabricObject.set({ opacity: 1 });
+        }
+        return;
+      }
+      const poleInsetMeters =
+        typeof poleMeta?.config?.cornerInsetMeters === "number"
+          ? poleMeta.config.cornerInsetMeters
+          : 0;
+      const cubePos = calculateCubeCornerPosition(
+        cubeMeta,
+        poleMeta.attachedCubeCorner || "1",
+        poleInsetMeters
+      );
+      const heightOffset =
+        typeof poleMeta?.config?.attachHeightOffsetMeters === "number"
+          ? poleMeta.config.attachHeightOffsetMeters
+          : 0;
+      const cubeHeightBoost = 0.5;
+      const newPos = {
+        ...cubePos,
+        altitude: (cubePos.altitude || 0) + heightOffset + cubeHeightBoost,
+      };
+      placeObjectAt(poleMeta.fabricObject, newPos);
+      if (newPos.altitude !== undefined) {
+        poleMeta.altitude = newPos.altitude;
+        if (elements.selectedAltitude && state.activeMeta && state.activeMeta.id === poleMeta.id) {
+          elements.selectedAltitude.value = poleMeta.altitude.toString();
+        }
+      }
+      poleMeta.fabricObject.set({ opacity: 0.85 });
+      updateObjectMetadata(poleMeta.fabricObject);
+      return;
+    }
+
     const gateMeta = state.placedObjects.find((m) => m.id === poleMeta.attachedTo);
     if (!gateMeta) {
       // Gate was deleted, detach pole
@@ -1460,25 +1602,49 @@
       return;
     }
     
+    const mode = elements.attachModeSelect ? elements.attachModeSelect.value : "";
+    updateAttachmentModeUI(mode);
     const gateId = elements.attachGateSelect.value;
+    const cubeId = elements.attachCubeSelect ? elements.attachCubeSelect.value : "";
     const side = elements.attachSideSelect.value;
     const requestedLevel = elements.attachLevelSelect
       ? elements.attachLevelSelect.value
       : "1";
+    const corner = elements.attachCornerSelect ? elements.attachCornerSelect.value : "1";
     
-    if (!gateId) {
+    if (!mode) {
       // Detach
       state.activeMeta.attachedTo = null;
       state.activeMeta.attachmentSide = null;
       state.activeMeta.attachedLevel = null;
+      state.activeMeta.attachedCubeTo = null;
+      state.activeMeta.attachedCubeCorner = null;
       updateAttachmentLevelOptions(null);
     } else {
-      // Attach
-      const gateMeta = state.placedObjects.find((entry) => entry.id === gateId);
-      const clampedLevel = updateAttachmentLevelOptions(gateMeta, requestedLevel);
-      state.activeMeta.attachedTo = gateId;
-      state.activeMeta.attachmentSide = side;
-      state.activeMeta.attachedLevel = clampedLevel;
+      if (mode === "cube" && cubeId) {
+        state.activeMeta.attachedCubeTo = cubeId;
+        state.activeMeta.attachedCubeCorner = corner;
+        state.activeMeta.attachedTo = null;
+        state.activeMeta.attachmentSide = null;
+        state.activeMeta.attachedLevel = null;
+        updateAttachmentLevelOptions(null);
+      } else if (mode === "gate" && gateId) {
+        // Attach to gate
+        const gateMeta = state.placedObjects.find((entry) => entry.id === gateId);
+        const clampedLevel = updateAttachmentLevelOptions(gateMeta, requestedLevel);
+        state.activeMeta.attachedTo = gateId;
+        state.activeMeta.attachmentSide = side;
+        state.activeMeta.attachedLevel = clampedLevel;
+        state.activeMeta.attachedCubeTo = null;
+        state.activeMeta.attachedCubeCorner = null;
+      } else {
+        state.activeMeta.attachedTo = null;
+        state.activeMeta.attachmentSide = null;
+        state.activeMeta.attachedLevel = null;
+        state.activeMeta.attachedCubeTo = null;
+        state.activeMeta.attachedCubeCorner = null;
+        updateAttachmentLevelOptions(null);
+      }
       updateAttachedPolePosition(state.activeMeta);
     }
     
@@ -1681,6 +1847,8 @@
       attachedTo: meta?.attachedTo || null,
       attachmentSide: meta?.attachmentSide || null,
       attachedLevel: meta?.attachedLevel || null,
+      attachedCubeTo: meta?.attachedCubeTo || null,
+      attachedCubeCorner: meta?.attachedCubeCorner || null,
       stackCount: meta?.stackCount,
     };
 
@@ -1842,6 +2010,8 @@
         attachedTo: meta?.attachedTo,
         attachmentSide: meta?.attachmentSide,
         attachedLevel: meta?.attachedLevel,
+        attachedCubeTo: meta?.attachedCubeTo,
+        attachedCubeCorner: meta?.attachedCubeCorner,
         stackCount: meta?.stackCount,
       });
 
@@ -1852,18 +2022,28 @@
 
     // Restore attachments after all objects exist
     state.placedObjects.forEach((entry) => {
-      if (!entry.attachedTo) {
-        return;
+      if (entry.attachedTo) {
+        const target = importMetaById.get(entry.attachedTo);
+        if (!target) {
+          entry.attachedTo = null;
+          entry.attachmentSide = null;
+          entry.attachedLevel = null;
+        } else {
+          entry.attachedTo = target.id;
+        }
       }
-      const target = importMetaById.get(entry.attachedTo);
-      if (!target) {
-        entry.attachedTo = null;
-        entry.attachmentSide = null;
-        entry.attachedLevel = null;
-      } else {
-        entry.attachedTo = target.id;
+      if (entry.attachedCubeTo) {
+        const cubeTarget = importMetaById.get(entry.attachedCubeTo);
+        if (!cubeTarget) {
+          entry.attachedCubeTo = null;
+          entry.attachedCubeCorner = null;
+        } else {
+          entry.attachedCubeTo = cubeTarget.id;
+        }
       }
-      updateAttachedPolePosition(entry);
+      if (entry.attachedTo || entry.attachedCubeTo) {
+        updateAttachedPolePosition(entry);
+      }
     });
 
     resnapAll();
@@ -1996,13 +2176,15 @@
       const finalAngle = normalizeAngle(object.angle + globalRotationDegrees + 90);
       const altitude = entry.altitude || 0;
 
-      const editorMeta = {
+    const editorMeta = {
         typeId: entry.config.id,
         id: entry.id,
         entityName: entry.entityName,
         attachedTo: entry.attachedTo || null,
         attachmentSide: entry.attachmentSide || null,
         attachedLevel: entry.attachedLevel || null,
+      attachedCubeTo: entry.attachedCubeTo || null,
+      attachedCubeCorner: entry.attachedCubeCorner || null,
         stackCount: entry.stackCount ?? null,
       };
 
@@ -2094,6 +2276,15 @@
       }
     });
 
+    lines.push("      <CheckpointList>");
+    lines.push("        {");
+    lines.push("            isCircuit: true,");
+    lines.push("            checkpoints:");
+    lines.push("            [");
+    lines.push('                "trkGate1"');
+    lines.push("            ]");
+    lines.push("        }");
+    lines.push("        </CheckpointList>");
     lines.push("    </Entity>");
     lines.push("  </Transform>");
     lines.push("</Simulation>");
@@ -2301,11 +2492,20 @@
       }
     });
     elements.selectedAltitude.addEventListener("change", handleAltitudeChange);
+    if (elements.attachModeSelect) {
+      elements.attachModeSelect.addEventListener("change", handleAttachmentChange);
+    }
     if (elements.attachGateSelect) {
       elements.attachGateSelect.addEventListener("change", handleAttachmentChange);
     }
+    if (elements.attachCubeSelect) {
+      elements.attachCubeSelect.addEventListener("change", handleAttachmentChange);
+    }
     if (elements.attachSideSelect) {
       elements.attachSideSelect.addEventListener("change", handleAttachmentChange);
+    }
+    if (elements.attachCornerSelect) {
+      elements.attachCornerSelect.addEventListener("change", handleAttachmentChange);
     }
     if (elements.attachLevelSelect) {
       elements.attachLevelSelect.addEventListener("change", handleAttachmentChange);

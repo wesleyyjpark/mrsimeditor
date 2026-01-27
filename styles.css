@@ -4,12 +4,12 @@
   font-size: 16px;
   line-height: 1.4;
   --bg: #f4f6f8;
-  --panel-bg: #6890ff;
-  --border: #d0d7de;
-  --primary: #0b6efd;
+  --panel-bg: #d8d8d8;
+  --border: #000000;
+  --primary: #e29d09;
   --primary-contrast: #ffffff;
   --danger: #e55353;
-  --text: #1f2328;
+  --text: #121518;
   --text-muted: #000000;
 }
 
@@ -80,7 +80,7 @@ button {
 }
 
 button:hover {
-  background: #8fc7ff;
+  background: #ffce8f;
 }
 
 button.primary {
@@ -90,7 +90,7 @@ button.primary {
 }
 
 button.primary:hover {
-  background: #0a5edb;
+  background: #dbaa0a;
 }
 
 button.danger {
@@ -163,6 +163,27 @@ button.secondary:hover {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 0.5rem;
+}
+
+.palette-tabs {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.palette-tab {
+  flex: 1;
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: #ffffff;
+  color: var(--primary);
+}
+
+.palette-tab.active {
+  background: var(--primary);
+  color: var(--primary-contrast);
+  border-color: var(--primary);
 }
 
 .palette button {

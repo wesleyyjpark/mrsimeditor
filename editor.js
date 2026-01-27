@@ -219,6 +219,7 @@
     rotationSnap: 5,
     snappingEnabled: true,
     snapDisabledByShift: false,
+    paletteTab: "favorites",
     entityCounters: {},
     placedObjects: [],
     metaByObjectId: new Map(),
@@ -291,6 +292,9 @@
 
   const elements = {
     palette: document.getElementById("object-palette"),
+    paletteTabFavorites: document.getElementById("palette-tab-favorites"),
+    paletteTabStandard: document.getElementById("palette-tab-standard"),
+    paletteTabChamps: document.getElementById("palette-tab-champs"),
     gridSizeInput: document.getElementById("grid-size-input"),
     rotationSnapInput: document.getElementById("rotation-snap-input"),
     importButton: document.getElementById("import-button"),
@@ -382,14 +386,48 @@
   /**
    * Register palette buttons and wire up click handlers.
    */
+  function updatePaletteTabUI() {
+    if (elements.paletteTabFavorites) {
+      const isActive = state.paletteTab === "favorites";
+      elements.paletteTabFavorites.classList.toggle("active", isActive);
+      elements.paletteTabFavorites.setAttribute("aria-pressed", isActive ? "true" : "false");
+    }
+    if (elements.paletteTabStandard) {
+      const isActive = state.paletteTab === "standard";
+      elements.paletteTabStandard.classList.toggle("active", isActive);
+      elements.paletteTabStandard.setAttribute("aria-pressed", isActive ? "true" : "false");
+    }
+    if (elements.paletteTabChamps) {
+      const isActive = state.paletteTab === "champs";
+      elements.paletteTabChamps.classList.toggle("active", isActive);
+      elements.paletteTabChamps.setAttribute("aria-pressed", isActive ? "true" : "false");
+    }
+  }
+
+  function setPaletteTab(tabKey) {
+    state.paletteTab = tabKey;
+    updatePaletteTabUI();
+    populatePalette();
+  }
+
   function populatePalette() {
     if (!elements.palette) {
       return;
     }
 
+    elements.palette.innerHTML = "";
+
     catalog.forEach((entry) => {
       // Skip objects marked as hidden from palette (reference-only objects)
       if (entry.paletteHidden) {
+        return;
+      }
+      const categories = Array.isArray(entry.paletteCategories)
+        ? entry.paletteCategories
+        : entry.paletteCategory
+          ? [entry.paletteCategory]
+          : ["standard"];
+      if (!categories.includes(state.paletteTab)) {
         return;
       }
 
@@ -2513,6 +2551,15 @@
     if (elements.gateStackCount) {
       elements.gateStackCount.addEventListener("change", handleGateStackChange);
     }
+    if (elements.paletteTabFavorites) {
+      elements.paletteTabFavorites.addEventListener("click", () => setPaletteTab("favorites"));
+    }
+    if (elements.paletteTabStandard) {
+      elements.paletteTabStandard.addEventListener("click", () => setPaletteTab("standard"));
+    }
+    if (elements.paletteTabChamps) {
+      elements.paletteTabChamps.addEventListener("click", () => setPaletteTab("champs"));
+    }
     if (elements.toggleReferencesButton) {
       elements.toggleReferencesButton.addEventListener("click", () => {
         state.showReferenceLayout = !state.showReferenceLayout;
@@ -2637,6 +2684,7 @@
 
   async function init() {
     sanitizeSettings();
+    updatePaletteTabUI();
     populatePalette();
     registerCanvasEvents();
     registerDomEvents();

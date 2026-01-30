@@ -17,8 +17,8 @@
   });
   window.trackCanvas = canvas;
   const layout = document.querySelector(".app-layout");
-  const canvasWidth = canvas.getWidth();
-  const canvasHeight = canvas.getHeight();
+  let canvasWidth = canvas.getWidth();
+  let canvasHeight = canvas.getHeight();
   const GRID_BOTTOM_MARGIN = 160;
   const DEFAULT_GRID_SIZE_METERS = 0.7;
   const MAJOR_GRID_METERS = 2.1;
@@ -79,6 +79,22 @@
     canvas.setBackgroundColor(pattern, () => {
       canvas.requestRenderAll();
     });
+  }
+
+  function resizeCanvasToWrapper() {
+    if (!elements.canvasWrapper) {
+      return;
+    }
+    const nextWidth = elements.canvasWrapper.clientWidth;
+    const nextHeight = elements.canvasWrapper.clientHeight;
+    if (!nextWidth || !nextHeight) {
+      return;
+    }
+    canvas.setWidth(nextWidth);
+    canvas.setHeight(nextHeight);
+    canvasWidth = nextWidth;
+    canvasHeight = nextHeight;
+    canvas.calcOffset();
   }
 
   function clampZoom(value) {
@@ -292,6 +308,7 @@
 
   const elements = {
     palette: document.getElementById("object-palette"),
+    canvasWrapper: document.querySelector(".canvas-wrapper"),
     paletteTabFavorites: document.getElementById("palette-tab-favorites"),
     paletteTabStandard: document.getElementById("palette-tab-standard"),
     paletteTabChamps: document.getElementById("palette-tab-champs"),
@@ -433,31 +450,112 @@
 
       const button = document.createElement("button");
       button.type = "button";
+      button.draggable = true;
+      button.dataset.typeId = entry.id;
+
+      const dragPreviewCanvas = document.createElement("canvas");
+      dragPreviewCanvas.width = 48;
+      dragPreviewCanvas.height = 48;
+      dragPreviewCanvas.style.position = "fixed";
+      dragPreviewCanvas.style.left = "-9999px";
+      dragPreviewCanvas.style.top = "-9999px";
+      dragPreviewCanvas.style.pointerEvents = "none";
+      const dragCtx = dragPreviewCanvas.getContext("2d");
+      if (dragCtx) {
+        const baseColor = entry.fillColor || entry.color || "#3f51b5";
+        dragCtx.clearRect(0, 0, dragPreviewCanvas.width, dragPreviewCanvas.height);
+        dragCtx.fillStyle = "rgba(255, 255, 255, 0.9)";
+        dragCtx.fillRect(0, 0, dragPreviewCanvas.width, dragPreviewCanvas.height);
+        dragCtx.save();
+        dragCtx.translate(dragPreviewCanvas.width / 2, dragPreviewCanvas.height / 2);
+        const size = 28;
+        if (entry.renderStyle === "point") {
+          dragCtx.beginPath();
+          dragCtx.arc(0, 0, 6, 0, Math.PI * 2);
+          dragCtx.fillStyle = baseColor;
+          dragCtx.fill();
+        } else if (entry.renderStyle === "outline") {
+          dragCtx.strokeStyle = baseColor;
+          dragCtx.lineWidth = 2;
+          dragCtx.strokeRect(-size / 2, -size / 6, size, size / 3);
+        } else if (entry.renderStyle === "rectWithCenterLine") {
+          dragCtx.strokeStyle = baseColor;
+          dragCtx.lineWidth = 2;
+          dragCtx.strokeRect(-size / 2, -size / 3, size, size / 1.5);
+          dragCtx.beginPath();
+          dragCtx.moveTo(-size / 2, 0);
+          dragCtx.lineTo(size / 2, 0);
+          dragCtx.lineWidth = 3;
+          dragCtx.stroke();
+        } else {
+          dragCtx.fillStyle = baseColor;
+          dragCtx.globalAlpha = 0.4;
+          dragCtx.fillRect(-size / 2, -size / 3, size, size / 1.5);
+          dragCtx.globalAlpha = 1;
+          dragCtx.strokeStyle = baseColor;
+          dragCtx.lineWidth = 2;
+          dragCtx.strokeRect(-size / 2, -size / 3, size, size / 1.5);
+        }
+        if (entry.labelText) {
+          dragCtx.fillStyle = baseColor;
+          dragCtx.font = "bold 12px sans-serif";
+          dragCtx.textAlign = "right";
+          dragCtx.textBaseline = "top";
+          dragCtx.fillText(entry.labelText, size / 2 - 2, -size / 3 + 2);
+        }
+        dragCtx.restore();
+      }
+      document.body.appendChild(dragPreviewCanvas);
 
       const labelSpan = document.createElement("span");
       labelSpan.className = "label";
       labelSpan.textContent = entry.label;
 
-      const includeSpan = document.createElement("span");
-      includeSpan.className = "include";
-      if (entry.placement === "macro") {
-        includeSpan.textContent = `Macro: ${entry.macroName}`;
-      } else if (entry.placement === "composite") {
-        const partCount = entry.compositeParts ? entry.compositeParts.length : 0;
-        includeSpan.textContent = `Composite: ${partCount} parts`;
+      const previewImagePath = entry.previewImage || entry.icon || "";
+      const previewImg = document.createElement("img");
+      previewImg.className = "palette-preview";
+      previewImg.alt = `${entry.label} preview`;
+      if (previewImagePath) {
+        previewImg.src = previewImagePath;
       } else {
-        includeSpan.textContent = entry.includeFile.replace("/Data/Simulations/Multirotor/", "");
+        previewImg.classList.add("hidden");
       }
 
       button.appendChild(labelSpan);
-      button.appendChild(includeSpan);
+      button.appendChild(previewImg);
 
       button.addEventListener("click", () => {
         addObjectToScene(entry.id);
       });
+      button.addEventListener("dragstart", (event) => {
+        if (!event.dataTransfer) {
+          return;
+        }
+        event.dataTransfer.setData("text/plain", entry.id);
+        event.dataTransfer.effectAllowed = "copy";
+        event.dataTransfer.setDragImage(dragPreviewCanvas, 24, 24);
+      });
 
       elements.palette.appendChild(button);
     });
+  }
+
+  function handleCanvasDragOver(event) {
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = "copy";
+    }
+  }
+
+  function handleCanvasDrop(event) {
+    event.preventDefault();
+    const typeId = event.dataTransfer?.getData("text/plain");
+    if (!typeId) {
+      return;
+    }
+    const pointer = canvas.getPointer(event);
+    const meters = pointerToMeters(pointer);
+    addObjectToScene(typeId, { x: meters.x, y: meters.y });
   }
 
   /**
@@ -1412,8 +1510,18 @@
     if (elements.selectedPreview && elements.selectedPreviewWrapper) {
       const previewPath = meta.config.previewImage || "";
       if (previewPath) {
+        elements.selectedPreviewWrapper.classList.add("hidden");
+        elements.selectedPreview.onload = null;
+        elements.selectedPreview.onerror = null;
+        elements.selectedPreview.removeAttribute("src");
+        elements.selectedPreview.onload = () => {
+          elements.selectedPreviewWrapper.classList.remove("hidden");
+        };
+        elements.selectedPreview.onerror = () => {
+          elements.selectedPreview.src = "";
+          elements.selectedPreviewWrapper.classList.add("hidden");
+        };
         elements.selectedPreview.src = previewPath;
-        elements.selectedPreviewWrapper.classList.remove("hidden");
       } else {
         elements.selectedPreview.src = "";
         elements.selectedPreviewWrapper.classList.add("hidden");
@@ -2551,6 +2659,15 @@
     if (elements.gateStackCount) {
       elements.gateStackCount.addEventListener("change", handleGateStackChange);
     }
+    window.addEventListener("resize", () => {
+      resizeCanvasToWrapper();
+      updateGridBackground();
+      canvas.requestRenderAll();
+    });
+    if (elements.canvasWrapper) {
+      elements.canvasWrapper.addEventListener("dragover", handleCanvasDragOver);
+      elements.canvasWrapper.addEventListener("drop", handleCanvasDrop);
+    }
     if (elements.paletteTabFavorites) {
       elements.paletteTabFavorites.addEventListener("click", () => setPaletteTab("favorites"));
     }
@@ -2683,6 +2800,7 @@
   }
 
   async function init() {
+    resizeCanvasToWrapper();
     sanitizeSettings();
     updatePaletteTabUI();
     populatePalette();

@@ -1,15 +1,14 @@
-/**
- * Catalog of placeable objects. Each entry defines how an object should be
- * rendered in the editor and how it should be exported to XML.
- */
-const GATE_ICON = "assets/gateobj.png";
-const FLAG_ICON = "assets/flag.png";
-const GENERIC_ICON = "assets/gateobj.png";
-const CUBE_ICON = "assets/cube.png";
-const DOUBLE_CUBE_ICON = "assets/double-cube.png";
-const QUAD_LADDER_ICON = "assets/quad-ladder.png";
+import type { ObjectConfig } from "../types";
+import {
+  CUBE_ICON,
+  DOUBLE_CUBE_ICON,
+  FLAG_ICON,
+  GATE_ICON,
+  GENERIC_ICON,
+  QUAD_LADDER_ICON,
+} from "./icons";
 
-const OBJECT_CATALOG = [
+export const OBJECT_CATALOG: ObjectConfig[] = [
   {
     id: "start-finish-5x5",
     label: "5x5 Start/Finish Gate",
@@ -20,13 +19,14 @@ const OBJECT_CATALOG = [
     footprintWidth: 2.1,
     footprintHeight: 0.2,
     stackSpacingMeters: 1.8,
-    visualWidth: 2.1, // Visual size matches actual size (gates touch when 2.1m apart)
+    visualWidth: 2.1,
     visualHeight: 2.1,
     altitude: 0,
     color: "#ff7043",
     placement: "macro",
     icon: GATE_ICON,
     renderStyle: "outline",
+    showDirectionArrow: true,
     paletteCategories: ["standard"],
     previewImage: "",
   },
@@ -40,13 +40,14 @@ const OBJECT_CATALOG = [
     footprintWidth: 2.1,
     footprintHeight: 0.2,
     stackSpacingMeters: 1.8,
-    visualWidth: 2.4, // Visual size matches actual size (gates touch when 2.1m apart)
+    visualWidth: 2.4,
     visualHeight: 2.1,
     altitude: 0,
     color: "#42a5f5",
     placement: "macro",
     icon: GATE_ICON,
     renderStyle: "outline",
+    showDirectionArrow: true,
     paletteCategories: ["favorites", "standard"],
     previewImage: "assets/gate-image.png",
   },
@@ -57,13 +58,9 @@ const OBJECT_CATALOG = [
     includeFile: "/Data/Simulations/Multirotor/7x7Gate.xml",
     width: 7,
     height: 7,
-    footprintWidth: 7,
-    footprintHeight: 0.2,
-    visualWidth: 7,
-    visualHeight: 7,
     footprintWidth: 2.1,
     footprintHeight: 0.2,
-    visualWidth: 2.1, // Visual size matches actual size
+    visualWidth: 2.1,
     visualHeight: 2.1,
     altitude: 0,
     color: "#26a69a",
@@ -318,7 +315,7 @@ const OBJECT_CATALOG = [
     macroName: "PipeDoubleCube",
     width: 2.1,
     height: 2.1,
-    visualWidth: 2, // Smaller visual size to prevent overlap in sim
+    visualWidth: 2,
     visualHeight: 4,
     altitude: 0,
     color: "#ffca28",
@@ -337,7 +334,7 @@ const OBJECT_CATALOG = [
     macroName: "PipeCube",
     width: 2.1,
     height: 2.1,
-    visualWidth: 2, // Smaller visual size to prevent overlap in sim
+    visualWidth: 2,
     visualHeight: 4,
     altitude: 0,
     color: "#fdd835",
@@ -356,7 +353,7 @@ const OBJECT_CATALOG = [
     macroName: "PipeLadder",
     width: 2.1,
     height: 2.1,
-    visualWidth: 2, // Smaller visual size to prevent overlap in sim
+    visualWidth: 2,
     visualHeight: 4,
     altitude: 0,
     color: "#ef5350",
@@ -375,7 +372,7 @@ const OBJECT_CATALOG = [
     macroName: "PipeQuadrupleLadder",
     width: 2.1,
     height: 2.1,
-    visualWidth: 2, // Smaller visual size to prevent overlap in sim
+    visualWidth: 2,
     visualHeight: 4,
     altitude: 0,
     color: "#d32f2f",
@@ -394,7 +391,7 @@ const OBJECT_CATALOG = [
     macroName: "PaddedPole",
     width: 2,
     height: 4,
-    altitude: 0, // Will be set when attached to top of gate
+    altitude: 0,
     attachHeightOffsetMeters: 0.3,
     color: "#66bb6a",
     placement: "macro",
@@ -411,10 +408,10 @@ const OBJECT_CATALOG = [
     entityPrefix: "trkFlag",
     macroName: "PaddedPole",
     width: 2,
-    height: 4, // Visual height for stacked poles
+    height: 4,
     altitude: 0,
     color: "#4caf50",
-    placement: "composite", // Special placement type for composite objects
+    placement: "composite",
     icon: FLAG_ICON,
     anchorOffsetMeters: 0,
     renderStyle: "point",
@@ -469,23 +466,100 @@ const OBJECT_CATALOG = [
   },
 ];
 
-/**
- * Helper map for quick lookup.
- */
-const OBJECT_LOOKUP = OBJECT_CATALOG.reduce((acc, entry) => {
-  acc[entry.id] = entry;
-  return acc;
-}, {});
+export const OBJECT_LOOKUP: Record<string, ObjectConfig> = OBJECT_CATALOG.reduce(
+  (acc, entry) => {
+    acc[entry.id] = entry;
+    return acc;
+  },
+  {} as Record<string, ObjectConfig>
+);
 
-if (typeof window !== "undefined") {
-  window.OBJECT_CATALOG = OBJECT_CATALOG;
-  window.OBJECT_LOOKUP = OBJECT_LOOKUP;
-  // Export icon constants for use in editor.js
-  window.GATE_ICON = GATE_ICON;
-  window.FLAG_ICON = FLAG_ICON;
-  window.GENERIC_ICON = GENERIC_ICON;
-  window.CUBE_ICON = CUBE_ICON;
-  window.DOUBLE_CUBE_ICON = DOUBLE_CUBE_ICON;
-  window.QUAD_LADDER_ICON = QUAD_LADDER_ICON;
+const GATE_TYPE_IDS = new Set(["gate-5x5", "gate-7x7", "start-finish-5x5"]);
+const CUBE_TYPE_IDS = new Set(["pipe-cube", "pipe-double-cube"]);
+const STACKABLE_GATE_TYPE_IDS = new Set(["gate-5x5", "start-finish-5x5"]);
+
+export function isGateConfig(config: ObjectConfig | null | undefined): boolean {
+  return Boolean(config && GATE_TYPE_IDS.has(config.id));
 }
 
+export function isCubeConfig(config: ObjectConfig | null | undefined): boolean {
+  return Boolean(config && CUBE_TYPE_IDS.has(config.id));
+}
+
+export function isStackableGateConfig(config: ObjectConfig | null | undefined): boolean {
+  return Boolean(config && STACKABLE_GATE_TYPE_IDS.has(config.id));
+}
+
+export function getGateStackCount(meta: { config: ObjectConfig; stackCount?: number } | null | undefined): number {
+  if (!meta || !isStackableGateConfig(meta.config)) {
+    return 1;
+  }
+  const count = Number.parseInt(String(meta.stackCount ?? ""), 10);
+  if (!Number.isFinite(count)) {
+    return 1;
+  }
+  return Math.max(1, Math.min(3, count));
+}
+
+export function getGateStackSpacing(meta: { config: ObjectConfig } | null | undefined): number {
+  if (!meta || !meta.config) {
+    return 0;
+  }
+  if (typeof meta.config.stackSpacingMeters === "number") {
+    return meta.config.stackSpacingMeters;
+  }
+  return meta.config.height || 2.1;
+}
+
+export const REFERENCE_LAYOUT = [
+  {
+    typeId: "mat-7x7",
+    x: 0,
+    y: 0,
+    angle: 0,
+    opacity: 0.7,
+    includeInExport: true,
+  },
+  {
+    typeId: "metal-launch-stand",
+    x: 0,
+    y: 0,
+    angle: 90,
+    opacity: 0.85,
+    includeInExport: true,
+  },
+  { typeId: "shade-canopy", x: -6, y: -6, angle: 0, opacity: 0.6 },
+  { typeId: "shade-canopy", x: 0, y: -6, angle: 0, opacity: 0.6 },
+  { typeId: "shade-canopy", x: 6, y: -6, angle: 0, opacity: 0.6 },
+  { typeId: "shade-canopy", x: 12, y: -6, angle: 0, opacity: 0.6 },
+];
+
+export const CANOPY_EXPORT_BLOCK = [
+  '  <Transform x="25" y="-85" rz="-1" angleDegrees="110">',
+  '    <Transform x="9" y="-4" rz="1" angleDegrees="-30">',
+  '      <Include file="/Data/Simulations/Multirotor/Furniture/ShadeCanopy.xml"/>',
+  "    </Transform>",
+  '    <Transform x="10" y="0">',
+  '      <Include file="/Data/Simulations/Multirotor/Furniture/ShadeCanopy.xml"/>',
+  "    </Transform>",
+  '    <Transform x="10" y="4" rz="1" angleDegrees="3">',
+  '      <Include file="/Data/Simulations/Multirotor/Furniture/ShadeCanopy.xml"/>',
+  "    </Transform>",
+  '    <Transform x="9.8" y="8" rz="1" angleDegrees="0">',
+  '      <Include file="/Data/Simulations/Multirotor/Furniture/ShadeCanopy.xml"/>',
+  "    </Transform>",
+  "  </Transform>",
+];
+
+export const CENTERED_GATE_MACROS = [
+  '  <Macro name="Centered5x5StartFinishGate">',
+  '    <Transform x="-1.05">',
+  '      <Include file="/Data/Simulations/Multirotor/5x5StartFinishGate.xml"/>',
+  "    </Transform>",
+  "  </Macro>",
+  '  <Macro name="Centered5x5Gate">',
+  '    <Transform x="-1.05">',
+  '      <Include file="/Data/Simulations/Multirotor/5x5Gate.xml"/>',
+  "    </Transform>",
+  "  </Macro>",
+];

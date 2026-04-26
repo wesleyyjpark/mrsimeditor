@@ -1,0 +1,117 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 20% 98%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 36 92% 47%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 16% 93%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 16% 95%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 210 16% 93%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 32% 88%;
+    --input: 214 32% 88%;
+    --ring: 36 92% 47%;
+    --radius: 0.6rem;
+  }
+
+  .dark {
+    --background: 222 47% 7%;
+    --foreground: 210 20% 96%;
+    --card: 222 47% 9%;
+    --card-foreground: 210 20% 96%;
+    --popover: 222 47% 9%;
+    --popover-foreground: 210 20% 96%;
+    --primary: 36 92% 55%;
+    --primary-foreground: 222 47% 11%;
+    --secondary: 217 32% 16%;
+    --secondary-foreground: 210 20% 96%;
+    --muted: 217 32% 14%;
+    --muted-foreground: 215 16% 65%;
+    --accent: 217 32% 16%;
+    --accent-foreground: 210 20% 96%;
+    --destructive: 0 75% 58%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 217 32% 18%;
+    --input: 217 32% 18%;
+    --ring: 36 92% 55%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body,
+  #root {
+    @apply h-full;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+}
+
+@layer components {
+  .indicator-svg-container {
+    @apply rounded-md border border-border bg-muted/40 p-2;
+  }
+
+  .indicator-svg-container svg {
+    @apply h-auto w-full;
+  }
+
+  .indicator-face {
+    cursor: pointer;
+  }
+
+  .indicator-face polygon {
+    transition: opacity 0.15s ease, fill 0.15s ease;
+  }
+
+  .indicator-face:hover polygon {
+    opacity: 0.45;
+  }
+
+  .indicator-face.active polygon {
+    opacity: 0.85;
+    fill: hsl(var(--primary));
+  }
+
+  .indicator-svg-container.mode-exit .indicator-face.active polygon,
+  .indicator-svg-container.mode-back .indicator-face.active polygon {
+    fill: hsl(var(--destructive)) !important;
+  }
+
+  .canvas-wrapper canvas {
+    @apply block h-full w-full;
+  }
+
+  /* Subtle scrollbars in scrollable panels */
+  .thin-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.4) transparent;
+  }
+
+  .thin-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .thin-scrollbar::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted-foreground) / 0.35);
+    border-radius: 4px;
+  }
+}

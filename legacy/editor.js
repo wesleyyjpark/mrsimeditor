@@ -1,4 +1,8 @@
 
+/**
+ * Canvas
+ * Canvas interactions, object editing, inspector state, and UI event wiring.
+ */
 (() => {
   const PIXELS_PER_METER = 40;
   const catalog = (typeof window !== "undefined" && window.OBJECT_CATALOG) || [];
@@ -10,6 +14,23 @@
   const CUBE_ICON = (typeof window !== "undefined" && window.CUBE_ICON) || "assets/cube.png";
   const DOUBLE_CUBE_ICON = (typeof window !== "undefined" && window.DOUBLE_CUBE_ICON) || "assets/double-cube.png";
   const QUAD_LADDER_ICON = (typeof window !== "undefined" && window.QUAD_LADDER_ICON) || "assets/quad-ladder.png";
+  const {
+    createUniqueId,
+    hexToRgba,
+    normalizeAngle,
+    normalizeEditorAngle,
+    downloadText,
+    buildEditorMeta,
+    parseEditorMeta,
+    invertGlobalTransform,
+  } = window.Utils;
+  const {
+    isGateConfig,
+    isCubeConfig,
+    isStackableGateConfig,
+    getGateStackCount,
+    getGateStackSpacing,
+  } = window.Model;
   const canvas = new fabric.Canvas("track-canvas", {
     selection: true,
     preserveObjectStacking: true,
@@ -206,28 +227,33 @@
     );
   }
 
+  let sidebarController = null;
+  let gateOrderController = null;
+  let canvasViewController = null;
+  let selectionPanelController = null;
+
   function updateSidebarsVisibility() {
-    if (layout) {
-      layout.classList.toggle("sidebars-hidden", state.sidebarsHidden);
+    if (sidebarController) {
+      sidebarController.updateSidebarsVisibility();
     }
-    if (elements.toggleSidebarsButton) {
-      elements.toggleSidebarsButton.textContent = state.sidebarsHidden
-        ? "Show Sidebars"
-        : "Hide Sidebars";
-      elements.toggleSidebarsButton.setAttribute(
-        "aria-pressed",
-        state.sidebarsHidden ? "true" : "false"
-      );
-    }
-    canvas.calcOffset();
-    canvas.requestRenderAll();
   }
 
-  function createUniqueId() {
-    if (typeof window !== "undefined" && window.crypto && window.crypto.randomUUID) {
-      return window.crypto.randomUUID();
+  function updatePaletteSidebarUI() {
+    if (sidebarController) {
+      sidebarController.updatePaletteSidebarUI();
     }
-    return `obj-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+  }
+
+  function setRightSidebarTab(tabKey) {
+    if (sidebarController) {
+      sidebarController.setRightSidebarTab(tabKey);
+    }
+  }
+
+  function setMiscTab(tabKey) {
+    if (sidebarController) {
+      sidebarController.setMiscTab(tabKey);
+    }
   }
 
   const state = {
@@ -244,6 +270,17 @@
     showReferenceLayout: true,
     zoom: 0.5,
     sidebarsHidden: false,
+    paletteCollapsed: false,
+    rightSidebarTab: "none",
+    miscTab: "snapping",
+    /** @type {"editor"|"gate-order"} */
+    canvasView: "editor",
+    checkpointOrder: [],
+    selectedPanelTab: "properties",
+    indicator: {
+      selectedFace: null,
+      mode: "Entry",
+    },
     ruler: {
       enabled: false,
       startPoint: null,
@@ -308,7 +345,15 @@
 
   const elements = {
     palette: document.getElementById("object-palette"),
-    canvasWrapper: document.querySelector(".canvas-wrapper"),
+    canvasWrapper: document.querySelector("#editor-canvas-panel .canvas-wrapper"),
+    editorCanvasPanel: document.getElementById("editor-canvas-panel"),
+    gateOrderPanel: document.getElementById("gate-order-panel"),
+    canvasTabEditor: document.getElementById("canvas-tab-editor"),
+    canvasTabGateOrder: document.getElementById("canvas-tab-gate-order"),
+    gateOrderInput: document.getElementById("gate-order-input"),
+    gateOrderAddButton: document.getElementById("gate-order-add"),
+    gateOrderList: document.getElementById("gate-order-list"),
+    gateOrderEmpty: document.getElementById("gate-order-empty"),
     paletteTabFavorites: document.getElementById("palette-tab-favorites"),
     paletteTabStandard: document.getElementById("palette-tab-standard"),
     paletteTabChamps: document.getElementById("palette-tab-champs"),
@@ -323,6 +368,7 @@
     clearSceneButton: document.getElementById("clear-scene"),
     toggleReferencesButton: document.getElementById("toggle-references"),
     toggleSidebarsButton: document.getElementById("toggle-sidebars"),
+    togglePaletteSidebarButton: document.getElementById("toggle-palette-sidebar"),
     zoomInButton: document.getElementById("zoom-in"),
     zoomOutButton: document.getElementById("zoom-out"),
     zoomSlider: document.getElementById("zoom-slider"),
@@ -342,6 +388,20 @@
     selectedRotation: document.getElementById("selected-rotation"),
     selectedPreview: document.getElementById("selected-preview"),
     selectedPreviewWrapper: document.getElementById("selected-preview-wrapper"),
+    selectedTabProperties: document.getElementById("selected-tab-properties"),
+    selectedTabIndicator: document.getElementById("selected-tab-indicator"),
+    selectedPropertiesPanel: document.getElementById("selected-properties-panel"),
+    selectedIndicatorPanel: document.getElementById("selected-indicator-panel"),
+    indicatorMode: document.getElementById("indicator-mode"),
+    indicatorSelectedFace: document.getElementById("indicator-selected-face"),
+    indicatorAddButton: document.getElementById("indicator-add-checkpoint"),
+    indicatorSvgContainer: document.getElementById("indicator-svg-container"),
+    rightTabMisc: document.getElementById("right-tab-misc"),
+    rightPanelMisc: document.getElementById("right-panel-misc"),
+    miscTabSnapping: document.getElementById("misc-tab-snapping"),
+    miscTabTransform: document.getElementById("misc-tab-transform"),
+    rightPanelSnapping: document.getElementById("right-panel-snapping"),
+    rightPanelTransform: document.getElementById("right-panel-transform"),
     attachmentControls: document.getElementById("attachment-controls"),
     attachModeSelect: document.getElementById("attach-mode-select"),
     gateAttachmentFields: document.getElementById("gate-attachment-fields"),
@@ -355,6 +415,123 @@
     gateStackCount: document.getElementById("gate-stack-count"),
     measureToggle: document.getElementById("measure-toggle"),
   };
+
+  if (typeof window !== "undefined") {
+    const indicatorConfigs = window.INDICATOR_CONFIGS || {};
+    if (window.SidebarUI && typeof window.SidebarUI.createSidebarController === "function") {
+      sidebarController = window.SidebarUI.createSidebarController({
+        layout,
+        canvas,
+        state,
+        elements,
+      });
+    }
+    if (window.GateOrderUI && typeof window.GateOrderUI.createGateOrderController === "function") {
+      gateOrderController = window.GateOrderUI.createGateOrderController({
+        state,
+        elements,
+      });
+    }
+    if (window.CanvasViewUI && typeof window.CanvasViewUI.createCanvasViewController === "function") {
+      canvasViewController = window.CanvasViewUI.createCanvasViewController({
+        state,
+        elements,
+        refreshCheckpointOrderUI: () => refreshCheckpointOrderUI(),
+      });
+    }
+    if (
+      window.SelectionPanelUI &&
+      typeof window.SelectionPanelUI.createSelectionPanelController === "function"
+    ) {
+      selectionPanelController = window.SelectionPanelUI.createSelectionPanelController({
+        state,
+        elements,
+        indicatorConfigs,
+        addCheckpointToOrder: (value) => addCheckpointToOrder(value),
+      });
+    }
+  }
+
+  function refreshCheckpointOrderUI() {
+    if (gateOrderController) {
+      gateOrderController.refreshCheckpointOrderUI();
+    }
+  }
+
+  function setCanvasView(view) {
+    if (canvasViewController) {
+      canvasViewController.setCanvasView(view);
+    }
+  }
+
+  function updateGateOrderUI() {
+    if (gateOrderController) {
+      gateOrderController.updateGateOrderUI();
+    }
+  }
+
+  function moveCheckpoint(index, delta) {
+    if (gateOrderController) {
+      gateOrderController.moveCheckpoint(index, delta);
+    }
+  }
+
+  function addCheckpointToOrder(value) {
+    if (gateOrderController) {
+      gateOrderController.addCheckpointToOrder(value);
+    }
+  }
+
+  function isIndicatorSupportedMeta(meta) {
+    if (!selectionPanelController) {
+      return false;
+    }
+    return selectionPanelController.isIndicatorSupportedMeta(meta);
+  }
+
+  function getIndicatorConfig(meta) {
+    if (!selectionPanelController) {
+      return null;
+    }
+    return selectionPanelController.getIndicatorConfig(meta);
+  }
+
+  function getIndicatorFaceElement(svg, faceId) {
+    if (!selectionPanelController) {
+      return null;
+    }
+    return selectionPanelController.getIndicatorFaceElement(svg, faceId);
+  }
+
+  function updateIndicatorModeOptions() {
+    if (selectionPanelController) {
+      selectionPanelController.updateIndicatorModeOptions();
+    }
+  }
+
+  function setSelectedPanelTab(tabKey) {
+    if (selectionPanelController) {
+      selectionPanelController.setSelectedPanelTab(tabKey);
+    }
+  }
+
+  async function renderIndicatorSvg() {
+    if (selectionPanelController) {
+      await selectionPanelController.renderIndicatorSvg();
+    }
+  }
+
+  function updateIndicatorSelection() {
+    if (selectionPanelController) {
+      selectionPanelController.updateIndicatorSelection();
+    }
+  }
+
+  function addIndicatorCheckpoint() {
+    if (selectionPanelController) {
+      selectionPanelController.addIndicatorCheckpoint();
+    }
+  }
 
   /**
    * Utility — clamp input values to meaningful ranges.
@@ -373,19 +550,7 @@
   }
 
   /**
-   * Convert a hex color to rgba string with given alpha.
-   */
-  function hexToRgba(hex, alpha) {
-    const sanitized = hex.replace("#", "");
-    const bigint = parseInt(sanitized, 16);
-    const r = (bigint >> 16) & 255;
-    const g = (bigint >> 8) & 255;
-    const b = bigint & 255;
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-  }
-
-  /**
-   * Build an entity name with a numeric suffix (e.g. gate1, gate2). this is important for locking the poles to a specfic gate
+   * Build an entity name with a numeric suffix (e.g. gate1, gate2).
    */
   function allocateEntityName(prefix) {
     const count = (state.entityCounters[prefix] || 0) + 1;
@@ -560,12 +725,12 @@
 
   /**
    * Convert fabric object's anchor-aligned position to meters.
-   * 
-   * COORDINATE SYSTEM EXPLANATION: (this will be changed it sucks ass)
+   *
+   * Coordinate system:
    * - Objects are positioned using their icon's anchor point (typically bottom-center)
-   * - The anchor offset accounts for where the "true" position (ground contact point) 
+   * - The anchor offset accounts for where the "true" position (ground contact point)
    *   is relative to the icon's visual anchor
-   * - For gates: offset is 50/638 of icon height (icon anchor is at bottom, true position 
+   * - For gates: offset is 50/638 of icon height (icon anchor is at bottom, true position
    *   is slightly above bottom)
    * - For flags/poles: offset is 285/2000 of icon height (flag pole base is partway up icon)
    * - getObjectPositionMeters() calculates the true position by subtracting the anchor offset
@@ -901,7 +1066,7 @@
       });
     }
 
-    // disables manipulation controls, the fabric specfic ones
+    // Disable Fabric transform controls for point-style objects.
     if (config.renderStyle === "point") {
       object.set({
         hasControls: false,
@@ -956,13 +1121,37 @@
       }
 
       if (renderStyle === "outline") {
+        const rect = new fabric.Rect({
+          width: footprintWidthPx,
+          height: footprintHeightPx,
+          fill: "transparent",
+          stroke: baseColor,
+          strokeWidth: 2,
+          originX: "center",
+          originY: "center",
+          selectable: false,
+          evented: false,
+          strokeUniform: true,
+        });
+        const parts = [rect];
+        if (config.showDirectionArrow) {
+          const arrowSize = Math.max(10, footprintWidthPx * 0.12);
+          const arrow = new fabric.Triangle({
+            width: arrowSize,
+            height: arrowSize,
+            fill: baseColor,
+            originX: "center",
+            originY: "center",
+            left: 0,
+            top: -arrowSize * 0.8,
+            angle: 180,
+            selectable: false,
+            evented: false,
+          });
+          parts.push(arrow);
+        }
         return Promise.resolve(
-          new fabric.Rect({
-            width: footprintWidthPx,
-            height: footprintHeightPx,
-            fill: "transparent",
-            stroke: baseColor,
-            strokeWidth: 2,
+          new fabric.Group(parts, {
             originX: "center",
             originY: "center",
             selectable: true,
@@ -1249,6 +1438,7 @@
     updateObjectMetadata(fabricObject);
     setActiveMeta(metadata);
     canvas.requestRenderAll();
+    refreshCheckpointOrderUI();
   }
 
   /**
@@ -1281,49 +1471,12 @@
   /**
    * Get all gates in the scene for attachment selection.
    */
-  const GATE_TYPE_IDS = new Set(["gate-5x5", "gate-7x7", "start-finish-5x5"]);
-  const CUBE_TYPE_IDS = new Set(["pipe-cube", "pipe-double-cube"]);
-  const STACKABLE_GATE_TYPE_IDS = new Set(["gate-5x5", "start-finish-5x5"]);
-
   function getGatesForAttachment() {
     return state.placedObjects.filter((entry) => isGateConfig(entry.config));
   }
 
   function getCubesForAttachment() {
     return state.placedObjects.filter((entry) => isCubeConfig(entry.config));
-  }
-
-  function isGateConfig(config) {
-    return Boolean(config && GATE_TYPE_IDS.has(config.id));
-  }
-
-  function isCubeConfig(config) {
-    return Boolean(config && CUBE_TYPE_IDS.has(config.id));
-  }
-
-  function isStackableGateConfig(config) {
-    return Boolean(config && STACKABLE_GATE_TYPE_IDS.has(config.id));
-  }
-
-  function getGateStackCount(meta) {
-    if (!meta || !isStackableGateConfig(meta.config)) {
-      return 1;
-    }
-    const count = Number.parseInt(meta.stackCount, 10);
-    if (!Number.isFinite(count)) {
-      return 1;
-    }
-    return Math.max(1, Math.min(3, count));
-  }
-
-  function getGateStackSpacing(meta) {
-    if (!meta || !meta.config) {
-      return 0;
-    }
-    if (typeof meta.config.stackSpacingMeters === "number") {
-      return meta.config.stackSpacingMeters;
-    }
-    return meta.config.height || 2.1;
   }
 
   /**
@@ -1474,17 +1627,38 @@
     if (!meta) {
       elements.selectedDetails.classList.add("hidden");
       elements.selectedNone.classList.remove("hidden");
+      state.selectedPanelTab = "properties";
       if (elements.attachmentControls) {
         elements.attachmentControls.classList.add("hidden");
       }
       if (elements.gateStackControls) {
         elements.gateStackControls.classList.add("hidden");
       }
+      if (elements.selectedTabIndicator) {
+        elements.selectedTabIndicator.classList.add("hidden");
+      }
+      setSelectedPanelTab("properties");
       return;
     }
 
     elements.selectedNone.classList.add("hidden");
     elements.selectedDetails.classList.remove("hidden");
+    const supportsIndicator = isIndicatorSupportedMeta(meta);
+    if (supportsIndicator) {
+      const currentType = elements.indicatorSvgContainer?.dataset?.indicatorType || "";
+      if (meta.config.id !== currentType) {
+        state.indicator.selectedFace = null;
+        updateIndicatorModeOptions();
+        renderIndicatorSvg();
+      }
+    }
+    if (elements.selectedTabIndicator) {
+      elements.selectedTabIndicator.classList.toggle("hidden", !supportsIndicator);
+    }
+    if (!supportsIndicator && state.selectedPanelTab === "indicator") {
+      state.selectedPanelTab = "properties";
+    }
+    setSelectedPanelTab(state.selectedPanelTab);
 
     elements.selectedLabel.textContent = meta.config.label;
     elements.selectedEntity.textContent = meta.entityName;
@@ -1531,10 +1705,11 @@
     // Update attachment controls
     updateGateStackControls(meta);
     updateAttachmentControls(meta);
+    updateIndicatorSelection();
   }
 
   /**
-   * Update metadata when altitude input changes. lowkey dont know why its altitude
+   * Update metadata when altitude input changes.
    */
   function handleAltitudeChange(event) {
     if (!state.activeMeta) {
@@ -1542,6 +1717,7 @@
     }
     const value = parseFloat(event.target.value);
     state.activeMeta.altitude = Number.isFinite(value) ? value : 0;
+    refreshCheckpointOrderUI();
   }
 
   /**
@@ -1657,6 +1833,7 @@
       if (poleMeta.fabricObject) {
         poleMeta.fabricObject.set({ opacity: 1 });
       }
+      refreshCheckpointOrderUI();
       return;
     }
 
@@ -1668,6 +1845,7 @@
         if (poleMeta.fabricObject) {
           poleMeta.fabricObject.set({ opacity: 1 });
         }
+        refreshCheckpointOrderUI();
         return;
       }
       const poleInsetMeters =
@@ -1697,6 +1875,7 @@
       }
       poleMeta.fabricObject.set({ opacity: 0.85 });
       updateObjectMetadata(poleMeta.fabricObject);
+      refreshCheckpointOrderUI();
       return;
     }
 
@@ -1709,6 +1888,7 @@
       if (poleMeta.fabricObject) {
         poleMeta.fabricObject.set({ opacity: 1 });
       }
+      refreshCheckpointOrderUI();
       return;
     }
     const stackCount = getGateStackCount(gateMeta);
@@ -1738,6 +1918,7 @@
     poleMeta.fabricObject.set({ opacity: 0.85 });
     
     updateObjectMetadata(poleMeta.fabricObject);
+    refreshCheckpointOrderUI();
   }
 
   /**
@@ -1795,6 +1976,7 @@
     }
     
     canvas.requestRenderAll();
+    refreshCheckpointOrderUI();
   }
 
   function handleGateStackChange() {
@@ -1819,6 +2001,7 @@
     });
 
     canvas.requestRenderAll();
+    refreshCheckpointOrderUI();
   }
 
   /**
@@ -1887,6 +2070,7 @@
       canvas.setActiveObject(cloned);
       setActiveMeta(newMeta);
       canvas.renderAll();
+      refreshCheckpointOrderUI();
     });
   }
 
@@ -1913,554 +2097,48 @@
     });
     state.placedObjects = [];
     state.metaByObjectId.clear();
+    state.checkpointOrder = [];
     resetEntityCounters();
     setActiveMeta(null);
     canvas.discardActiveObject();
     canvas.requestRenderAll();
+    updateGateOrderUI();
   }
 
-  function buildEditorMeta(meta) {
-    return `      <!-- EditorMeta: ${JSON.stringify(meta)} -->`;
-  }
-
-  function parseEditorMeta(commentText) {
-    if (!commentText) {
-      return null;
-    }
-    const marker = "EditorMeta:";
-    const index = commentText.indexOf(marker);
-    if (index === -1) {
-      return null;
-    }
-    const jsonText = commentText.slice(index + marker.length).trim();
-    if (!jsonText) {
-      return null;
-    }
-    try {
-      return JSON.parse(jsonText);
-    } catch (error) {
-      console.warn("Failed to parse EditorMeta comment", error);
-      return null;
-    }
-  }
-
-  function normalizeEditorAngle(angleDegrees) {
-    let angle = angleDegrees % 360;
-    if (angle < -180) {
-      angle += 360;
-    }
-    if (angle > 180) {
-      angle -= 360;
-    }
-    return angle;
-  }
-
-  function updateEntityCounterFromName(name) {
-    if (!name || name === "Track") {
-      return;
-    }
-    const match = name.match(/^(.*?)(\d+)$/);
-    if (!match) {
-      return;
-    }
-    const [, prefix, numberText] = match;
-    const number = Number.parseInt(numberText, 10);
-    if (!Number.isFinite(number)) {
-      return;
-    }
-    state.entityCounters[prefix] = Math.max(state.entityCounters[prefix] || 0, number);
-  }
-
-  async function addObjectFromImport(config, position, meta) {
-    const fabricObject = await createFabricObject(config);
-    fabricObject.data = { typeId: config.id };
-    applyVisualDefaults(fabricObject, config);
-    placeObjectAt(fabricObject, position);
-    fabricObject.setCoords();
-
-    canvas.add(fabricObject);
-
-    const safeEntityName =
-      meta?.entityName && meta.entityName !== "Track"
-        ? meta.entityName
-        : allocateEntityName(config.entityPrefix);
-    const metadata = {
-      id: meta?.id || createUniqueId(),
-      config,
-      fabricObject,
-      entityName: safeEntityName,
-      altitude: Number.isFinite(position.altitude) ? position.altitude : config.altitude ?? 0,
-      attachedTo: meta?.attachedTo || null,
-      attachmentSide: meta?.attachmentSide || null,
-      attachedLevel: meta?.attachedLevel || null,
-      attachedCubeTo: meta?.attachedCubeTo || null,
-      attachedCubeCorner: meta?.attachedCubeCorner || null,
-      stackCount: meta?.stackCount,
-    };
-
-    updateEntityCounterFromName(metadata.entityName);
-
-    state.placedObjects.push(metadata);
-    state.metaByObjectId.set(fabricObject, metadata);
-    updateObjectMetadata(fabricObject);
-    return metadata;
-  }
-
-  function invertGlobalTransform(finalX, finalY, globalOffsetX, globalOffsetY, globalRotationDegrees) {
-    const rotationRad = (globalRotationDegrees * Math.PI) / 180;
-    const cosR = Math.cos(rotationRad);
-    const sinR = Math.sin(rotationRad);
-    const adjustedX = finalX - globalOffsetX;
-    const adjustedY = finalY - globalOffsetY;
-    const rotatedForward = adjustedX;
-    const rotatedLateral = -adjustedY;
-    const forward = rotatedForward * cosR + rotatedLateral * sinR;
-    const lateral = -rotatedForward * sinR + rotatedLateral * cosR;
-    return { forward, lateral };
-  }
-
-  async function importXmlFromText(xmlText) {
-    if (!xmlText) {
-      return;
-    }
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(xmlText, "application/xml");
-    const parserError = doc.querySelector("parsererror");
-    if (parserError) {
-      alert("Could not parse XML file. Please check the file contents.");
-      return;
-    }
-
-    const shouldClear = state.placedObjects.length === 0
-      ? true
-      : confirm("Importing will replace the current scene. Continue?");
-    if (!shouldClear) {
-      return;
-    }
-    clearScene();
-
-    const commentNodes = Array.from(doc.childNodes).filter(
-      (node) => node.nodeType === Node.COMMENT_NODE
-    );
-    const globalMeta = commentNodes
-      .map((node) => parseEditorMeta(node.nodeValue || ""))
-      .find((meta) => meta && meta.scope === "global");
-
-    const globalOffsetX = Number.isFinite(globalMeta?.globalOffsetX)
-      ? globalMeta.globalOffsetX
-      : 0;
-    const globalOffsetY = Number.isFinite(globalMeta?.globalOffsetY)
-      ? globalMeta.globalOffsetY
-      : 0;
-    const globalRotation = Number.isFinite(globalMeta?.globalRotation)
-      ? globalMeta.globalRotation
-      : 0;
-
-    elements.globalOffsetX.value = globalOffsetX.toString();
-    elements.globalOffsetY.value = globalOffsetY.toString();
-    elements.globalRotation.value = globalRotation.toString();
-
-    const transformNodes = Array.from(doc.querySelectorAll("Transform")).filter((node) =>
-      node.querySelector(":scope > Entity")
-    );
-
-    const compositeSeen = new Set();
-    const stackSeen = new Set();
-    const importMetaById = new Map();
-
-    for (const transform of transformNodes) {
-      const entity = transform.querySelector(":scope > Entity");
-      if (!entity) {
-        continue;
-      }
-
-      let meta = null;
-      let prevNode = transform.previousSibling;
-      while (prevNode && prevNode.nodeType === Node.TEXT_NODE && !prevNode.nodeValue?.trim()) {
-        prevNode = prevNode.previousSibling;
-      }
-      if (prevNode && prevNode.nodeType === Node.COMMENT_NODE) {
-        meta = parseEditorMeta(prevNode.nodeValue || "");
-      }
-
-      if (meta?.compositeGroupId) {
-        if (compositeSeen.has(meta.compositeGroupId)) {
-          continue;
-        }
-        compositeSeen.add(meta.compositeGroupId);
-      }
-
-      if (meta?.stackGroupId) {
-        if (stackSeen.has(meta.stackGroupId)) {
-          continue;
-        }
-        stackSeen.add(meta.stackGroupId);
-      }
-
-      const finalX = Number.parseFloat(transform.getAttribute("x") || "0");
-      const finalY = Number.parseFloat(transform.getAttribute("y") || "0");
-      const altitude = Number.parseFloat(transform.getAttribute("z") || "0");
-      const angleDegrees = Number.parseFloat(transform.getAttribute("angleDegrees") || "0");
-
-      const { forward, lateral } = invertGlobalTransform(
-        finalX,
-        finalY,
-        globalOffsetX,
-        globalOffsetY,
-        globalRotation
-      );
-
-      let typeConfig = null;
-      if (meta?.typeId) {
-        typeConfig = lookup[meta.typeId] || null;
-      }
-
-      if (!typeConfig) {
-        const instance = entity.querySelector("Instance");
-        const include = entity.querySelector("Include");
-        const macroName = instance?.getAttribute("macro");
-        const includeFile = include?.getAttribute("file");
-        typeConfig =
-          catalog.find((entry) => entry.macroName === macroName) ||
-          catalog.find((entry) => entry.includeFile === includeFile) ||
-          null;
-      }
-
-      if (
-        entity.getAttribute("name") === "Track" &&
-        !meta?.typeId &&
-        !entity.querySelector("Instance") &&
-        !entity.querySelector("Include")
-      ) {
-        continue;
-      }
-
-      if (!typeConfig) {
-        console.warn("Skipping unknown object in import:", entity.getAttribute("name"));
-        continue;
-      }
-
-      const rawEntityName = meta?.entityName || entity.getAttribute("name") || "";
-      const entityName = rawEntityName === "Track" ? "" : rawEntityName;
-
-      const position = {
-        x: lateral,
-        y: forward,
-        angle: normalizeEditorAngle(angleDegrees - globalRotation - 90),
-        altitude,
-      };
-
-      const importedMeta = await addObjectFromImport(typeConfig, position, {
-        id: meta?.id,
-        entityName,
-        attachedTo: meta?.attachedTo,
-        attachmentSide: meta?.attachmentSide,
-        attachedLevel: meta?.attachedLevel,
-        attachedCubeTo: meta?.attachedCubeTo,
-        attachedCubeCorner: meta?.attachedCubeCorner,
-        stackCount: meta?.stackCount,
-      });
-
-      if (meta?.id) {
-        importMetaById.set(meta.id, importedMeta);
-      }
-    }
-
-    // Restore attachments after all objects exist
-    state.placedObjects.forEach((entry) => {
-      if (entry.attachedTo) {
-        const target = importMetaById.get(entry.attachedTo);
-        if (!target) {
-          entry.attachedTo = null;
-          entry.attachmentSide = null;
-          entry.attachedLevel = null;
-        } else {
-          entry.attachedTo = target.id;
-        }
-      }
-      if (entry.attachedCubeTo) {
-        const cubeTarget = importMetaById.get(entry.attachedCubeTo);
-        if (!cubeTarget) {
-          entry.attachedCubeTo = null;
-          entry.attachedCubeCorner = null;
-        } else {
-          entry.attachedCubeTo = cubeTarget.id;
-        }
-      }
-      if (entry.attachedTo || entry.attachedCubeTo) {
-        updateAttachedPolePosition(entry);
-      }
-    });
-
-    resnapAll();
-    refreshSelectionPanel();
-    canvas.requestRenderAll();
-  }
-
-  function handleImportButtonClick() {
-    if (elements.importFileInput) {
-      elements.importFileInput.value = "";
-      elements.importFileInput.click();
-    }
-  }
-
-  function handleImportFileChange(event) {
-    const file = event.target.files?.[0];
-    if (!file) {
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      importXmlFromText(reader.result);
-    };
-    reader.onerror = () => {
-      alert("Failed to read the XML file.");
-    };
-    reader.readAsText(file);
-  }
-
-  /**
-   * Build XML string from current scene objects.
-   */
-  function exportXml() {
-    const offsetForward = parseFloat(elements.globalOffsetX.value) || 0;
-    const offsetLateral = parseFloat(elements.globalOffsetY.value) || 0;
-    const globalRotationDegrees = parseFloat(elements.globalRotation.value) || 0;
-    const rotationRad = (globalRotationDegrees * Math.PI) / 180;
-    const cosR = Math.cos(rotationRad);
-    const sinR = Math.sin(rotationRad);
-
-    const lines = [];
-    lines.push("<Simulation>");
-    lines.push(
-      buildEditorMeta({
-        scope: "global",
-        globalOffsetX: offsetForward,
-        globalOffsetY: offsetLateral,
-        globalRotation: globalRotationDegrees,
-      })
-    );
-    lines.push('  <Include file="/Data/Simulations/Multirotor/Locations/BaylandsPark.xml"/>');
-    lines.push('  <Include file="/Data/Simulations/Multirotor/DroneTrackInstanceGroups.xml"/>');
-    lines.push('  <Include file="/Data/Simulations/Multirotor/Gates/PoleGates.xml"/>');
-    lines.push("");
-    CENTERED_GATE_MACROS.forEach((line) => lines.push(line));
-    lines.push("");
-    CANOPY_EXPORT_BLOCK.forEach((line) => lines.push(line));
-    lines.push("");
-    lines.push('  <Transform x="30" y="-60">');
-    lines.push('    <Entity name="Track">');
-    lines.push('      <Transform x="0" y="0" rz="-1" angleDegrees="0">');
-    lines.push("        <Transform>");
-    lines.push('          <Include file="/Data/Simulations/Multirotor/7x7Mat.xml"/>');
-    lines.push("        </Transform>");
-    lines.push('        <Transform z=".025" rz="-1" angleDegrees="90">');
-    lines.push('          <Include file="/Data/Simulations/Multirotor/LaunchStands/MetalLaunchStand.xml"/>');
-    lines.push("        </Transform>");
-    lines.push("      </Transform>");
-    if (state.placedObjects.length > 0) {
-      lines.push("");
-    }
-
-    // Collect gate positions and enforce minimum spacing
-    const gatePositions = [];
-    const GATE_WIDTH = 2.1; // Gates are 2.1m wide and centered with -1.05m offset
-    
-    state.placedObjects.forEach((entry) => {
-      const object = entry.fabricObject;
-      const config = entry.config;
-      const isGate = config.id === "gate-5x5" || config.id === "gate-7x7" || config.id === "start-finish-5x5";
-      
-      if (isGate) {
-        const pos = getObjectPositionMeters(object);
-        const forward = pos.y;
-        const lateral = pos.x;
-        const rotatedForward = forward * cosR - lateral * sinR;
-        const rotatedLateral = forward * sinR + lateral * cosR;
-        let finalX = rotatedForward + offsetForward;
-        let finalY = -rotatedLateral + offsetLateral;
-        
-        // Ensure gates are at least their width apart
-        for (const existingGate of gatePositions) {
-          const dx = finalX - existingGate.x;
-          const dy = finalY - existingGate.y;
-          const distance = Math.sqrt(dx * dx + dy * dy);
-          
-          if (distance > 0 && distance < GATE_WIDTH) {
-            // Push gates apart to maintain minimum spacing
-            const angle = Math.atan2(dy, dx);
-            const neededSeparation = GATE_WIDTH - distance;
-            finalX += Math.cos(angle) * neededSeparation;
-            finalY += Math.sin(angle) * neededSeparation;
-          }
-        }
-        
-        gatePositions.push({ x: finalX, y: finalY, entry });
-      }
-    });
-    
-    // Now export all objects, using adjusted positions for gates
-    const gatePositionsMap = new Map();
-    gatePositions.forEach(({ entry, x, y }) => {
-      gatePositionsMap.set(entry, { x, y });
-    });
-
-    state.placedObjects.forEach((entry) => {
-      const object = entry.fabricObject;
-      const pos = getObjectPositionMeters(object);
-
-      const forward = pos.y;
-      const lateral = pos.x;
-      const rotatedForward = forward * cosR - lateral * sinR;
-      const rotatedLateral = forward * sinR + lateral * cosR;
-      
-      // Use adjusted position if this is a gate, otherwise use calculated position
-      const adjustedPos = gatePositionsMap.get(entry);
-      const finalX = adjustedPos ? adjustedPos.x : (rotatedForward + offsetForward);
-      const finalY = adjustedPos ? adjustedPos.y : (-rotatedLateral + offsetLateral);
-      
-      const finalAngle = normalizeAngle(object.angle + globalRotationDegrees + 90);
-      const altitude = entry.altitude || 0;
-
-    const editorMeta = {
-        typeId: entry.config.id,
-        id: entry.id,
-        entityName: entry.entityName,
-        attachedTo: entry.attachedTo || null,
-        attachmentSide: entry.attachmentSide || null,
-        attachedLevel: entry.attachedLevel || null,
-      attachedCubeTo: entry.attachedCubeTo || null,
-      attachedCubeCorner: entry.attachedCubeCorner || null,
-        stackCount: entry.stackCount ?? null,
-      };
-
-      const stackCount = getGateStackCount(entry);
-      if (isStackableGateConfig(entry.config) && stackCount > 1) {
-        const stackSpacing = getGateStackSpacing(entry);
-        for (let i = 1; i <= stackCount; i += 1) {
-          const stackAltitude = altitude + stackSpacing * (i - 1);
-          const stackEntityName = i === 1 ? entry.entityName : `${entry.entityName}_stack${i}`;
-          lines.push(
-            buildEditorMeta({
-              ...editorMeta,
-              stackGroupId: entry.id,
-              stackIndex: i,
-              stackCount,
-            })
-          );
-          lines.push(
-            `      <Transform x="${finalX.toFixed(3)}" y="${finalY.toFixed(
-              3
-            )}" z="${stackAltitude.toFixed(3)}" angleDegrees="${finalAngle.toFixed(
-              1
-            )}" rz="-1">`
-          );
-          lines.push(`        <Entity name="${stackEntityName}">`);
-          if (entry.config.placement === "macro") {
-            lines.push(`          <Instance macro="${entry.config.macroName}"/>`);
-          } else {
-            lines.push(`          <Include file="${entry.config.includeFile}"/>`);
-          }
-          lines.push("        </Entity>");
-          lines.push("      </Transform>");
-        }
-        return;
-      }
-
-      // Handle composite objects (like pipe-flag with stacked poles)
-      if (entry.config.placement === "composite" && entry.config.compositeParts) {
-        entry.config.compositeParts.forEach((part, index) => {
-          const partAltitude = altitude + (part.altitude || 0);
-          const partEntityName = index === 0 ? entry.entityName : `${entry.entityName}_${index + 1}`;
-          lines.push(
-            buildEditorMeta({
-              ...editorMeta,
-              compositeGroupId: entry.id,
-              compositeIndex: index + 1,
-              compositeCount: entry.config.compositeParts.length,
-            })
-          );
-          
-          lines.push(
-            `      <Transform x="${finalX.toFixed(3)}" y="${finalY.toFixed(
-              3
-            )}" z="${partAltitude.toFixed(3)}" angleDegrees="${finalAngle.toFixed(
-              1
-            )}" rz="-1">`
-          );
-          lines.push(`        <Entity name="${partEntityName}">`);
-          
-          if (part.macroName) {
-            lines.push(`          <Instance macro="${part.macroName}"/>`);
-          } else if (part.includeFile) {
-            lines.push(`          <Include file="${part.includeFile}"/>`);
-          }
-          
-          lines.push("        </Entity>");
-          lines.push("      </Transform>");
-        });
-      } else {
-        // Standard single object export
-      lines.push(buildEditorMeta(editorMeta));
-      lines.push(
-        `      <Transform x="${finalX.toFixed(3)}" y="${finalY.toFixed(
-          3
-        )}" z="${altitude.toFixed(3)}" angleDegrees="${finalAngle.toFixed(
-          1
-        )}" rz="-1">`
-      );
-        lines.push(`        <Entity name="${entry.entityName}">`);
-
-        if (entry.config.placement === "macro") {
-          lines.push(`          <Instance macro="${entry.config.macroName}"/>`);
-        } else {
-          lines.push(`          <Include file="${entry.config.includeFile}"/>`);
-        }
-
-        lines.push("        </Entity>");
-        lines.push("      </Transform>");
-      }
-    });
-
-    lines.push("      <CheckpointList>");
-    lines.push("        {");
-    lines.push("            isCircuit: true,");
-    lines.push("            checkpoints:");
-    lines.push("            [");
-    lines.push('                "trkGate1"');
-    lines.push("            ]");
-    lines.push("        }");
-    lines.push("        </CheckpointList>");
-    lines.push("    </Entity>");
-    lines.push("  </Transform>");
-    lines.push("</Simulation>");
-
-    downloadText(lines.join("\n"), "track.xml");
-  }
-
-  /**
-   * Normalize angles to [0, 360).
-   */
-  function normalizeAngle(angleDegrees) {
-    let angle = angleDegrees % 360;
-    if (angle < 0) {
-      angle += 360;
-    }
-    return angle;
-  }
-
-  /**
-   * Trigger browser download for text content.
-   */
-  function downloadText(text, filename) {
-    const blob = new Blob([text], { type: "application/xml" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = filename;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  }
+  const importController = window.Import.createController({
+    state,
+    canvas,
+    elements,
+    catalog,
+    lookup,
+    createFabricObject,
+    applyVisualDefaults,
+    placeObjectAt,
+    allocateEntityName,
+    createUniqueId,
+    updateObjectMetadata,
+    clearScene,
+    parseEditorMeta,
+    invertGlobalTransform,
+    normalizeEditorAngle,
+    updateAttachedPolePosition,
+    resnapAll,
+    refreshSelectionPanel,
+    buildEditorMeta,
+    centeredGateMacros: CENTERED_GATE_MACROS,
+    canopyExportBlock: CANOPY_EXPORT_BLOCK,
+    getObjectPositionMeters,
+    normalizeAngle,
+    downloadText,
+    getGateStackCount,
+    isStackableGateConfig,
+    getGateStackSpacing,
+    onSceneChanged: refreshCheckpointOrderUI,
+  });
+  const importXmlFromText = importController.importXmlFromText;
+  const handleImportButtonClick = importController.handleImportButtonClick;
+  const handleImportFileChange = importController.handleImportFileChange;
+  const exportXml = importController.exportXml;
 
   /**
    * Reset canvas viewport transform.
@@ -2521,6 +2199,7 @@
       }
       
       canvas.requestRenderAll();
+      refreshCheckpointOrderUI();
     });
 
     canvas.on("object:removed", (event) => {
@@ -2543,6 +2222,7 @@
         if (state.activeMeta && state.activeMeta.id === meta.id) {
           setActiveMeta(null);
         }
+        refreshCheckpointOrderUI();
       }
     });
 
@@ -2677,6 +2357,57 @@
     if (elements.paletteTabChamps) {
       elements.paletteTabChamps.addEventListener("click", () => setPaletteTab("champs"));
     }
+    if (elements.togglePaletteSidebarButton) {
+      elements.togglePaletteSidebarButton.addEventListener("click", () => {
+        state.paletteCollapsed = !state.paletteCollapsed;
+        updatePaletteSidebarUI();
+      });
+    }
+    if (elements.rightTabMisc) {
+      elements.rightTabMisc.addEventListener("click", () => {
+        setRightSidebarTab(state.rightSidebarTab === "misc" ? "none" : "misc");
+      });
+    }
+    if (elements.miscTabSnapping) {
+      elements.miscTabSnapping.addEventListener("click", () => setMiscTab("snapping"));
+    }
+    if (elements.miscTabTransform) {
+      elements.miscTabTransform.addEventListener("click", () => setMiscTab("transform"));
+    }
+    if (elements.canvasTabEditor) {
+      elements.canvasTabEditor.addEventListener("click", () => setCanvasView("editor"));
+    }
+    if (elements.canvasTabGateOrder) {
+      elements.canvasTabGateOrder.addEventListener("click", () => setCanvasView("gate-order"));
+    }
+    if (elements.gateOrderAddButton) {
+      elements.gateOrderAddButton.addEventListener("click", () =>
+        addCheckpointToOrder(elements.gateOrderInput?.value || "")
+      );
+    }
+    if (elements.gateOrderInput) {
+      elements.gateOrderInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          addCheckpointToOrder(elements.gateOrderInput.value || "");
+        }
+      });
+    }
+    if (elements.selectedTabProperties) {
+      elements.selectedTabProperties.addEventListener("click", () => setSelectedPanelTab("properties"));
+    }
+    if (elements.selectedTabIndicator) {
+      elements.selectedTabIndicator.addEventListener("click", () => setSelectedPanelTab("indicator"));
+    }
+    if (elements.indicatorMode) {
+      elements.indicatorMode.addEventListener("change", () => {
+        state.indicator.mode = elements.indicatorMode.value;
+        updateIndicatorSelection();
+      });
+    }
+    if (elements.indicatorAddButton) {
+      elements.indicatorAddButton.addEventListener("click", addIndicatorCheckpoint);
+    }
     if (elements.toggleReferencesButton) {
       elements.toggleReferencesButton.addEventListener("click", () => {
         state.showReferenceLayout = !state.showReferenceLayout;
@@ -2771,10 +2502,11 @@
       entry.fabricObject.setCoords();
     });
     canvas.requestRenderAll();
+    refreshCheckpointOrderUI();
   }
 
   /**
-   * Draw crosshair guidelines to indicate the origin. was using this for debugging, lowkey should remove it later
+   * Draw crosshair guidelines that indicate the editor origin.
    */
   function drawOriginGuides() {
     const origin = getGridOrigin();
@@ -2806,6 +2538,8 @@
     populatePalette();
     registerCanvasEvents();
     registerDomEvents();
+    updatePaletteSidebarUI();
+    setRightSidebarTab(state.rightSidebarTab);
     updateSidebarsVisibility();
     updateRulerUI();
     updatePanCursor();
@@ -2813,6 +2547,10 @@
     updateSnappingUI();
     updateGridBackground();
     drawOriginGuides();
+    await renderIndicatorSvg();
+    updateIndicatorModeOptions();
+    updateGateOrderUI();
+    setCanvasView("editor");
     await createReferenceObjects();
   }
 

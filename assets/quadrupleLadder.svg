@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 864 864">
+  <!-- Generator: Adobe Illustrator 30.3.0, SVG Export Plug-In . SVG Version: 2.1.3 Build 182)  -->
+  <g id="quadrupleLadder.level2">
+    <polygon points="504.28 576.66 364.76 654.98 364.69 486.89 503.36 406.36 504.28 576.66" fill="#00aeef" isolation="isolate" opacity=".2"/>
+  </g>
+  <g id="quadrupleLadder.level1">
+    <polygon points="505.91 701.03 364.76 782.38 364.7 661.11 505.57 578.91 505.91 701.03" fill="#00aeef" isolation="isolate" opacity=".2"/>
+  </g>
+  <rect x="364.88" y="723.86" width="6.17" height="140.96" rx="3.09" ry="3.09" transform="translate(-503.93 715.84) rotate(-60)" fill="#231f20"/>
+  <rect x="359.22" y="482.87" width="8.75" height="309.91" rx="3.58" ry="3.58" fill="#231f20"/>
+  <rect x="508.59" y="633.02" width="6.17" height="153.04" rx="3.09" ry="3.09" transform="translate(-358.64 797.89) rotate(-60)" fill="#231f20"/>
+  <rect x="503.36" y="400.59" width="8.44" height="305.93" rx="3.58" ry="3.58" fill="#231f20"/>
+  <rect x="392.4" y="646.96" width="5.78" height="191.52" rx="2.89" ry="2.89" transform="translate(-239.62 190.66) rotate(-20.97)" fill="#231f20"/>
+  <rect x="276.98" y="706.03" width="117.94" height="7.47" transform="translate(-449.2 697.01) rotate(-63.74)" fill="#231f20"/>
+  <rect x="417.66" y="617.31" width="121.48" height="7" transform="translate(-298.44 724.71) rotate(-60)" fill="#231f20"/>
+  <rect x="539.67" y="565.34" width="5.78" height="191.52" rx="2.89" ry="2.89" transform="translate(-200.66 237.96) rotate(-20.97)" fill="#231f20"/>
+  <rect x="352.43" y="741.31" width="169.73" height="8.79" rx="3.6" ry="3.6" transform="translate(-314.27 318.55) rotate(-30)" fill="#231f20"/>
+  <rect x="346.57" y="615.82" width="169.73" height="8.79" rx="3.6" ry="3.6" transform="translate(-252.31 298.81) rotate(-30)" fill="#231f20"/>
+  <rect x="352.43" y="441.3" width="169.73" height="8.79" rx="3.6" ry="3.6" transform="translate(-164.26 278.36) rotate(-30)" fill="#231f20"/>
+  <g id="quadrupleLadder.level4">
+    <polygon points="507.14 233.47 367.62 311.79 367.55 143.7 506.23 63.17 507.14 233.47" fill="#00aeef" isolation="isolate" opacity=".2"/>
+  </g>
+  <rect x="359.28" y="136.96" width="7.16" height="353.66" rx="3.58" ry="3.58" fill="#231f20"/>
+  <rect x="503.42" y="55.21" width="8.38" height="349.14" rx="3.58" ry="3.58" fill="#231f20"/>
+  <rect x="352.48" y="439.15" width="169.73" height="8.79" rx="3.6" ry="3.6" transform="translate(-163.18 278.1) rotate(-30)" fill="#231f20"/>
+  <rect x="352.43" y="271.31" width="169.73" height="8.79" rx="3.6" ry="3.6" transform="translate(-79.27 255.58) rotate(-30)" fill="#231f20"/>
+  <rect x="352.48" y="95.74" width="169.73" height="8.79" rx="3.6" ry="3.6" transform="translate(8.53 232.09) rotate(-30)" fill="#231f20"/>
+  <g id="quadrupleLadder.level3">
+    <polygon points="507.09 404.56 367.56 482.88 367.5 314.79 506.17 234.26 507.09 404.56" fill="#00aeef" isolation="isolate" opacity=".2"/>
+  </g>
+</svg>

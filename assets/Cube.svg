@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 864 864">
+  <!-- Generator: Adobe Illustrator 30.3.0, SVG Export Plug-In . SVG Version: 2.1.3 Build 182)  -->
+  <g id="face-right">
+    <polygon points="608.71 398.26 527.36 352.52 527.48 259.29 608.71 306.29 608.71 398.26" fill="#00aeef" opacity=".2"/>
+  </g>
+  <rect x="154.85" y="250.48" width="7.2" height="320.4" rx="3.6" ry="3.6" fill="#231f20"/>
+  <rect x="570.06" y="327.68" width="7.2" height="320.4" rx="3.6" ry="3.6" transform="translate(-135.69 740.75) rotate(-60)" fill="#231f20"/>
+  <rect x="431.38" y="408.24" width="7.2" height="320.4" rx="3.6" ry="3.6" fill="#231f20"/>
+  <rect x="705.68" y="246.88" width="7.2" height="320.4" rx="3.6" ry="3.6" fill="#231f20"/>
+  <rect x="431.76" y="86.68" width="7.2" height="320.4" rx="3.6" ry="3.6" fill="#231f20"/>
+  <rect x="293.51" y="8.57" width="7.2" height="320.4" rx="3.6" ry="3.6" transform="translate(294.71 -172.92) rotate(60)" fill="#231f20"/>
+  <rect x="293.2" y="487.03" width="7.2" height="320.4" rx="3.6" ry="3.6" transform="translate(-412.12 580.65) rotate(-60)" fill="#231f20"/>
+  <rect x="293.2" y="325.18" width="7.2" height="320.4" rx="3.6" ry="3.6" transform="translate(568.75 -14.35) rotate(60)" fill="#231f20"/>
+  <rect x="570.82" y="487.03" width="7.2" height="320.4" rx="3.6" ry="3.6" transform="translate(847.73 -173.84) rotate(60)" fill="#231f20"/>
+  <g id="face-left">
+    <polygon points="326.88 552.28 243.99 505.67 244.11 410.68 326.88 458.56 326.88 552.28" fill="#00aeef" opacity=".2"/>
+  </g>
+  <rect x="569.75" y="8.57" width="7.2" height="320.4" rx="3.6" ry="3.6" transform="translate(1006.18 -243.38) rotate(120)" fill="#231f20"/>
+  <rect x="570.82" y="164.89" width="7.2" height="320.4" rx="3.6" ry="3.6" transform="translate(568.75 -334.91) rotate(60)" fill="#231f20"/>
+  <rect x="293.2" y="168.58" width="7.2" height="320.4" rx="3.6" ry="3.6" transform="translate(-136.33 421.43) rotate(-60)" fill="#231f20"/>
+  <g id="face-top">
+    <polygon points="518.55 249.72 435.38 298.37 352.16 250.96 435.47 202.97 518.55 249.72" fill="#00aeef" opacity=".2"/>
+  </g>
+  <g id="face-front">
+    <polygon points="616.73 502.1 532.1 550.32 532.98 452.11 616.73 403.47 616.73 502.1" fill="#00aeef" opacity=".2"/>
+  </g>
+  <g id="face-back">
+    <polygon points="267.45 396.45 268.37 307.17 345.96 261.1 346.22 350.98 267.45 396.45" fill="#00aeef" opacity=".2"/>
+  </g>
+</svg>

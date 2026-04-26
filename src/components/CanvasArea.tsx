@@ -2,7 +2,6 @@ import { useEffect } from "react";
 import {
   Eye,
   EyeOff,
-  Magnet,
   Maximize2,
   Minus,
   PanelLeftClose,
@@ -17,6 +16,8 @@ import { useOptionalCanvasController } from "../canvas/controllerContext";
 import { GateOrderPanel } from "./GateOrderPanel";
 import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Slider } from "@/components/ui/slider";
@@ -95,16 +96,19 @@ export function CanvasArea({ canvasRef, wrapperRef }: CanvasAreaProps) {
           </TooltipContent>
         </Tooltip>
 
-        <Tooltip>
+        <Tooltip delayDuration={200}>
           <TooltipTrigger asChild>
-            <Toggle
-              size="sm"
-              pressed={snappingEnabled}
-              onPressedChange={setSnappingEnabled}
-              aria-label="Snapping"
-            >
-              <Magnet className="h-3.5 w-3.5" />
-            </Toggle>
+            <div className="inline-flex h-8 items-center gap-2 rounded-md">
+              <Switch
+                id="editor-snap-enabled"
+                className="shrink-0"
+                checked={snappingEnabled}
+                onCheckedChange={setSnappingEnabled}
+              />
+              <Label htmlFor="editor-snap-enabled" className="cursor-pointer text-sm font-medium leading-none">
+                Snap to grid
+              </Label>
+            </div>
           </TooltipTrigger>
           <TooltipContent className="max-w-[260px]">
             <div className="flex items-center justify-between gap-2 font-medium">

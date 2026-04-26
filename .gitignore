@@ -10,3 +10,8 @@ dist-ssr/
 .idea/
 .vscode/
 *.log
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example

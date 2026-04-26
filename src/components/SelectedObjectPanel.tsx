@@ -95,7 +95,7 @@ export function SelectedObjectPanel() {
         <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
           <Box className="h-8 w-8 text-muted-foreground" />
           <p className="text-xs text-muted-foreground">
-            Select an object on the canvas to edit its properties.
+            Select an object on the canvas to edit its properties and add indicators.
           </p>
         </div>
       </div>

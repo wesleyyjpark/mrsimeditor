@@ -163,25 +163,30 @@ export function PalettePanel() {
                       event.dataTransfer.setDragImage(preview, 24, 24);
                       setTimeout(() => preview.remove(), 0);
                     }}
+                    // Fixed image height and centering alignment on the button, doesn't use image preview anymore
                     className={cn(
-                      "group relative flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border border-border bg-card p-2 text-card-foreground shadow-sm transition-all",
+                      "group relative flex aspect-square min-h-0 flex-col items-stretch gap-1 rounded-lg border border-border bg-card p-2 text-card-foreground shadow-sm transition-all",
                       "hover:border-primary/60 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                       "active:scale-[0.97]"
                     )}
                   >
                     {previewImagePath ? (
-                      <img
-                        className="h-12 w-12 object-contain"
-                        alt={`${entry.label} preview`}
-                        src={previewImagePath}
-                        draggable={false}
-                      />
+                      <div className="flex min-h-0 flex-1 items-center justify-center">
+                        <img
+                          className="max-h-full max-w-full object-contain"
+                          alt={`${entry.label} preview`}
+                          src={previewImagePath}
+                          draggable={false}
+                        />
+                      </div>
                     ) : (
-                      <div className="flex h-12 w-12 items-center justify-center rounded bg-muted text-muted-foreground">
-                        <Star className="h-5 w-5" />
+                      <div className="flex min-h-0 flex-1 items-center justify-center">
+                        <div className="flex h-12 w-12 items-center justify-center rounded bg-muted text-muted-foreground">
+                          <Star className="h-5 w-5" />
+                        </div>
                       </div>
                     )}
-                    <span className="line-clamp-1 text-[11px] font-medium leading-tight text-center">
+                    <span className="shrink-0 line-clamp-1 text-center text-[11px] font-medium leading-tight">
                       {entry.label}
                     </span>
                   </button>

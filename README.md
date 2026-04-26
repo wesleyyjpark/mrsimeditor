@@ -1,7 +1,13 @@
 # Track Editor for MRSIM 
 Made by Wesley (wesleyfpv)
 
-Top-down track editor for MRSIM. The UI is built with React, Vite, and TypeScript
+### Top-down track editor for MRSIM. 
+
+Built as a project to get me some more web dev experience and create tracks in MRSIM
+without having to fiddle with XML and coordinate stuff. I prioritize track building speed
+over a 3d environment.
+
+The UI is built with React, Vite, and TypeScript
 The canvas is rendered with fabric
 
 ## Features
@@ -28,22 +34,24 @@ TO DO LIST
 ## Project layout
 
 ```
-|src/
-|              App.tsx               # root component, owns the CanvasController lifecycle
-               main.tsx              # React entrypoint
-               canvas/
-                  CanvasController.ts # imperative Fabric.js logic (selection, snapping, IO)
-                  controllerContext.tsx
-               components/           # UI panels and layout
-               data/                 # object catalog, indicator config, icon paths
-               store/editorStore.ts  # Zustand store for shared UI state
-               types/                # shared TS types
-            utils/                # pure helpers (math, file IO, editor metadata)
-            styles/index.css      # all styles
-assets/                 # static images / SVG diagrams (served by Vite)
-legacy/                 # previous vanilla JS implementation, kept for reference
+mrsimeditor/
+├── assets/                          # Static images and svg diagrams
+├── src/
+│   ├── App.tsx                      # root component, owns the CanvasController lifecycle
+│   ├── canvas/
+│   │   └── CanvasController.ts      # Fabric.js logic (selection, snapping, IO)
+│   ├── components/                  # UI panels and layout
+│   │   └── ui/
+│   ├── data/                        # object catalog, indicator config, icon paths
+│   ├── hooks/
+│   ├── lib/
+│   │   └── utils.ts
+│   ├── main.tsx                     # React entrypoint
+│   ├── store/                        # Zustand store for shared UI state
+│   ├── styles/                      # all styles
+│   ├── types/                       # shared TS types
+│   ├── utils/                       # pure helpers (math, file IO, editor metadata)
 ```
-
 
 ## Running locally
 

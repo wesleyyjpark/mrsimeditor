@@ -5,6 +5,8 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
+import { cloudflare } from "@cloudflare/vite-plugin";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ASSETS_DIR = path.resolve(__dirname, "assets");
@@ -50,7 +52,7 @@ function rootAssets(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), rootAssets()],
+  plugins: [react(), rootAssets(), cloudflare()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),

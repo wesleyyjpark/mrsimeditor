@@ -101,7 +101,7 @@ export function Header() {
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background px-4">
       <div className="flex items-center gap-2 font-semibold">
-        <img src="assets/MRSIM_Logo.png" alt="MRSIM logo" className="h-8 w-8" />
+        <img src="assets/MRSIM_Logo.png" alt="MRSIM logo" className="h-8 w-auto" />
         <span className="hidden text-sm tracking-tight sm:inline">Track Editor</span>
         <span className="rounded bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
           Prototype

@@ -157,8 +157,8 @@ export function CanvasArea({ canvasRef, wrapperRef }: CanvasAreaProps) {
           </TooltipContent>
         </Tooltip>
 
-        /* Add tooltip help here */
-        
+        {/* Add tooltip button here later */}
+
 
         <AlertDialog>
           <Tooltip>

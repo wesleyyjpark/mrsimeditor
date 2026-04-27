@@ -728,9 +728,8 @@ export class CanvasController {
   }
 
   /**
-   * Small triangle just past the bottom edge of the footprint; tip points toward
-   * the gate center (inward, −Y). Mirrors the legacy top-edge marker but on the
-   * opposite narrow side.
+   * Small triangle just past the bottom edge of the icon\
+   * tip points toward the gate center which is (inward, −Y)
    */
   private makeFrontMarkerInward(
     baseColor: string,
@@ -880,7 +879,7 @@ export class CanvasController {
           leftLine.set({ opacity: 0 });
           leftTip.set({ opacity: 0 });
           leftArrow.set({ opacity: 0 });
-
+          // The arrow itself as the front marker
           const forwardMarker: fabric.Object[] = showForward
             ? (() => {
                 const f = this.makeFrontMarkerInward(baseColor, 8, radius);

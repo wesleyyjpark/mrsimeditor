@@ -102,6 +102,7 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     renderStyle: "point",
     sensingLineMeters: 1.5,
     paletteCategories: ["champs"],
+    showDirectionArrow: false,
   },
   {
     id: "hurdle-7x16",
@@ -120,6 +121,7 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     icon: GENERIC_ICON,
     renderStyle: "outline",
     paletteCategories: ["standard", "champs"],
+    showDirectionArrow: false,
   },
   {
     id: "hurdle-5x10",
@@ -138,6 +140,7 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     icon: GENERIC_ICON,
     renderStyle: "outline",
     paletteCategories: ["standard"],
+    showDirectionArrow: false,
   },
   {
     id: "hurdle-4x7",
@@ -156,6 +159,7 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     icon: GENERIC_ICON,
     renderStyle: "outline",
     paletteCategories: ["standard", "champs"],
+    showDirectionArrow: false,
   },
   {
     id: "gate-7x6",
@@ -294,6 +298,7 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     passageTarget: "flag",
     paletteCategories: ["favorites"],
     previewImage: "",
+    showDirectionArrow: false,
   },
   {
     id: "pipe-double-cube",
@@ -389,6 +394,7 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     sensingLineMeters: 1.5,
     paletteCategories: ["favorites", "standard"],
     previewImage: "assets/pole-image.png",
+    showDirectionArrow: false,
   },
   {
     id: "pipe-flag",
@@ -410,6 +416,7 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
       { macroName: "PaddedPole", altitude: 0 },
       { macroName: "PaddedPole", altitude: 2 },
     ],
+    showDirectionArrow: false,
   },
   {
     id: "shade-canopy",

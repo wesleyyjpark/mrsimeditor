@@ -53,6 +53,8 @@ export interface PlacedSummary {
   entityName: string;
   isGate: boolean;
   isCube: boolean;
+  /** 1 = single gate; 2+ for stackable multi-level gates (padded-pole level picker). */
+  stackCount?: number;
 }
 
 export interface EditorState {

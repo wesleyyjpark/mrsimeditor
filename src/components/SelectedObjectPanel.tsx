@@ -18,6 +18,7 @@ import {
   AlignHorizontalDistributeCenter,
   AlignVerticalDistributeCenter,
 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import type { CanvasController } from "../canvas/CanvasController";
 import { useEditorStore } from "../store/editorStore";
@@ -401,7 +402,18 @@ interface PoleAttachmentControlsProps {
 function PoleAttachmentControls({ selected, placedSummary, onChange }: PoleAttachmentControlsProps) {
   const gates = placedSummary.filter((p) => p.isGate);
   const cubes = placedSummary.filter((p) => p.isCube);
-  const mode = selected.attachedCubeTo ? "cube" : selected.attachedTo ? "gate" : "";
+  const fromMeta = selected.attachedCubeTo ? "cube" : selected.attachedTo ? "gate" : "";
+  const [pendingMode, setPendingMode] = useState<"" | "gate" | "cube">("");
+
+  useEffect(() => {
+    setPendingMode("");
+  }, [selected.id]);
+
+  // Lets user open Gate/Cube sub-panels before any target exists; once attached, meta wins.
+  const mode = (fromMeta || pendingMode) as "" | "gate" | "cube";
+  const attachedGate = gates.find((g) => g.id === selected.attachedTo);
+  const levelCount = Math.max(1, attachedGate?.stackCount ?? 1);
+  const levelOptions = Array.from({ length: levelCount }, (_, i) => i + 1);
 
   return (
     <div className="space-y-2 rounded-md border border-border bg-muted/30 p-2">
@@ -410,16 +422,31 @@ function PoleAttachmentControls({ selected, placedSummary, onChange }: PoleAttac
         <Label className="text-xs">Mode</Label>
         <Select
           value={mode || "none"}
-          onValueChange={(v) =>
-            onChange({
-              mode: (v === "none" ? "" : v) as "" | "gate" | "cube",
-              gateId: selected.attachedTo ?? undefined,
-              cubeId: selected.attachedCubeTo ?? undefined,
-              side: selected.attachmentSide ?? "left",
-              level: selected.attachedLevel ?? 1,
-              corner: selected.attachedCubeCorner ?? "1",
-            })
-          }
+          onValueChange={(v) => {
+            if (v === "none") {
+              setPendingMode("");
+              onChange({ mode: "" });
+              return;
+            }
+            if (v === "gate") {
+              setPendingMode("gate");
+              onChange({
+                mode: "gate",
+                gateId: gates[0]?.id,
+                side: selected.attachmentSide ?? "left",
+                level: selected.attachedLevel ?? 1,
+              });
+              return;
+            }
+            if (v === "cube") {
+              setPendingMode("cube");
+              onChange({
+                mode: "cube",
+                cubeId: cubes[0]?.id,
+                corner: selected.attachedCubeCorner ?? "1",
+              });
+            }
+          }}
         >
           <SelectTrigger className="h-8 text-xs">
             <SelectValue />
@@ -438,14 +465,19 @@ function PoleAttachmentControls({ selected, placedSummary, onChange }: PoleAttac
             <Label className="text-xs">Attach to Gate</Label>
             <Select
               value={selected.attachedTo ?? "none"}
-              onValueChange={(v) =>
+              onValueChange={(v) => {
+                if (v === "none") {
+                  setPendingMode("");
+                  onChange({ mode: "" });
+                  return;
+                }
                 onChange({
                   mode: "gate",
-                  gateId: v === "none" ? undefined : v,
+                  gateId: v,
                   side: selected.attachmentSide ?? "left",
                   level: selected.attachedLevel ?? 1,
-                })
-              }
+                });
+              }}
             >
               <SelectTrigger className="h-8 text-xs">
                 <SelectValue />
@@ -457,16 +489,19 @@ function PoleAttachmentControls({ selected, placedSummary, onChange }: PoleAttac
                 ))}
               </SelectContent>
             </Select>
+            {gates.length === 0 ? (
+              <p className="text-[11px] text-muted-foreground">Add a gate to the scene, then pick it here.</p>
+            ) : null}
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className={`grid gap-2 ${levelCount > 1 ? "grid-cols-2" : "grid-cols-1"}`}>
             <div className="space-y-1.5">
-              <Label className="text-xs">Side</Label>
+              <Label className="text-xs">Side of gate</Label>
               <Select
                 value={selected.attachmentSide ?? "left"}
                 onValueChange={(v) =>
                   onChange({
                     mode: "gate",
-                    gateId: selected.attachedTo ?? undefined,
+                    gateId: selected.attachedTo ?? gates[0]?.id,
                     side: v as "left" | "right",
                     level: selected.attachedLevel ?? 1,
                   })
@@ -481,29 +516,38 @@ function PoleAttachmentControls({ selected, placedSummary, onChange }: PoleAttac
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Level</Label>
-              <Select
-                value={String(selected.attachedLevel ?? 1)}
-                onValueChange={(v) =>
-                  onChange({
-                    mode: "gate",
-                    gateId: selected.attachedTo ?? undefined,
-                    side: selected.attachmentSide ?? "left",
-                    level: Number.parseInt(v, 10),
-                  })
-                }
-              >
-                <SelectTrigger className="h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1">Gate 1</SelectItem>
-                  <SelectItem value="2">Gate 2</SelectItem>
-                  <SelectItem value="3">Gate 3</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            {levelCount > 1 ? (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Stack level</Label>
+                <Select
+                  value={String(
+                    Math.min(
+                      levelCount,
+                      Math.max(1, selected.attachedLevel ?? 1)
+                    )
+                  )}
+                  onValueChange={(v) =>
+                    onChange({
+                      mode: "gate",
+                      gateId: selected.attachedTo ?? gates[0]?.id,
+                      side: selected.attachmentSide ?? "left",
+                      level: Number.parseInt(v, 10),
+                    })
+                  }
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {levelOptions.map((n) => (
+                      <SelectItem key={n} value={String(n)}>
+                        Level {n} {n === 1 ? "(bottom)" : n === levelCount ? "(top)" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : null}
           </div>
         </>
       ) : null}
@@ -514,13 +558,18 @@ function PoleAttachmentControls({ selected, placedSummary, onChange }: PoleAttac
             <Label className="text-xs">Attach to Cube</Label>
             <Select
               value={selected.attachedCubeTo ?? "none"}
-              onValueChange={(v) =>
+              onValueChange={(v) => {
+                if (v === "none") {
+                  setPendingMode("");
+                  onChange({ mode: "" });
+                  return;
+                }
                 onChange({
                   mode: "cube",
-                  cubeId: v === "none" ? undefined : v,
+                  cubeId: v,
                   corner: selected.attachedCubeCorner ?? "1",
-                })
-              }
+                });
+              }}
             >
               <SelectTrigger className="h-8 text-xs">
                 <SelectValue />
@@ -532,6 +581,9 @@ function PoleAttachmentControls({ selected, placedSummary, onChange }: PoleAttac
                 ))}
               </SelectContent>
             </Select>
+            {cubes.length === 0 ? (
+              <p className="text-[11px] text-muted-foreground">Add a cube to the scene, then pick it here.</p>
+            ) : null}
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Corner</Label>
@@ -540,7 +592,7 @@ function PoleAttachmentControls({ selected, placedSummary, onChange }: PoleAttac
               onValueChange={(v) =>
                 onChange({
                   mode: "cube",
-                  cubeId: selected.attachedCubeTo ?? undefined,
+                  cubeId: selected.attachedCubeTo ?? cubes[0]?.id,
                   corner: v,
                 })
               }
@@ -606,7 +658,7 @@ function PoleSensingControls({
       <p className="text-[11px] leading-snug text-muted-foreground">
         The small arrow under the dashed line points at the entry side (right =
         local +X, left = −X). Rotate the pole, choose side, then add — each
-        click locks that passage’s orientation in the export.
+        time you add a checkpoint, it locks that passage’s orientation in the export even if you rotate the pole later.
       </p>
       <div className="flex items-center justify-between gap-2">
         <Label

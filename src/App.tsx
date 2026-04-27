@@ -4,7 +4,7 @@ import { CanvasControllerContext } from "./canvas/controllerContext";
 import { useEditorStore } from "./store/editorStore";
 import type { PlacedObjectMeta } from "./types";
 import type { PlacedSummary, SelectedObjectSnapshot } from "./store/editorStore";
-import { isCubeConfig, isGateConfig } from "./data/objects";
+import { getGateStackCount, isCubeConfig, isGateConfig } from "./data/objects";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { useTheme } from "@/hooks/useTheme";
@@ -73,6 +73,7 @@ export function App() {
             entityName: entry.entityName,
             isGate: isGateConfig(entry.config),
             isCube: isCubeConfig(entry.config),
+            stackCount: isGateConfig(entry.config) ? getGateStackCount(entry) : undefined,
           }));
           useEditorStore.getState().setPlacedSummary(placed);
           if (!useHistoryStore.getState().applying) {

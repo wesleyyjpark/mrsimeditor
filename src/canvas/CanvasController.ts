@@ -298,6 +298,14 @@ export class CanvasController {
             }
             this.updateObjectMetadata(obj);
           }
+          this.placedObjects.forEach((m) => {
+            if (m.config.id !== "padded-pole") return;
+            if (m.attachedTo || m.attachedCubeTo) {
+              this.updateAttachedPolePosition(m);
+            } else {
+              this.applyAttachedPoleMoveLock(m);
+            }
+          });
           // loadFromJSON wipes the canvas; rebuild the persistent reference
           // layout objects (they are excluded from the export so they aren't
           // part of the snapshot).
@@ -603,6 +611,17 @@ export class CanvasController {
 
   private snapObjectTransform(object: fabric.Object): void {
     if (!this.settings.snappingEnabled || this.snapDisabledByShift) {
+      object.setCoords();
+      return;
+    }
+    const attachedPole = this.metaByObjectId.get(object);
+    if (
+      attachedPole?.config.id === "padded-pole" &&
+      (attachedPole.attachedTo || attachedPole.attachedCubeTo)
+    ) {
+      const snappedAngle =
+        Math.round((object.angle ?? 0) / this.settings.rotationSnap) * this.settings.rotationSnap;
+      object.set({ angle: snappedAngle });
       object.setCoords();
       return;
     }
@@ -1157,6 +1176,7 @@ export class CanvasController {
         this.applySensingSideVisibility(newMeta);
       }
       this.updateObjectMetadata(cloned);
+      this.applyAttachedPoleMoveLock(newMeta);
       this.canvas.setActiveObject(cloned);
       this.setActiveMeta(newMeta);
       this.canvas.renderAll();
@@ -1240,6 +1260,9 @@ export class CanvasController {
     const meta = this.activeMeta;
     if (!meta || meta.config.id !== "padded-pole") return;
     const { mode } = opts;
+    const prevGateId = meta.attachedTo;
+    const prevCubeId = meta.attachedCubeTo;
+    const wasAttached = !!(prevGateId || prevCubeId);
 
     if (!mode) {
       meta.attachedTo = null;
@@ -1247,20 +1270,44 @@ export class CanvasController {
       meta.attachedLevel = null;
       meta.attachedCubeTo = null;
       meta.attachedCubeCorner = null;
-    } else if (mode === "cube" && opts.cubeId) {
-      meta.attachedCubeTo = opts.cubeId;
+    } else if (mode === "cube") {
+      let cubeId = opts.cubeId;
+      if (!cubeId) {
+        const cubes = this.getCubesForAttachment();
+        cubeId = cubes[0]?.id;
+      }
+      if (!cubeId) {
+        // No cube in the scene to attach to — do not clear an existing
+        // attachment; UI may re-prompt once a cube exists.
+        this.canvas.requestRenderAll();
+        this.callbacks.onSelectionChanged(meta);
+        this.callbacks.onSceneChanged();
+        return;
+      }
+      meta.attachedCubeTo = cubeId;
       meta.attachedCubeCorner = opts.corner ?? "1";
       meta.attachedTo = null;
       meta.attachmentSide = null;
       meta.attachedLevel = null;
-    } else if (mode === "gate" && opts.gateId) {
-      const gateMeta = this.placedObjects.find((entry) => entry.id === opts.gateId);
+    } else if (mode === "gate") {
+      let gateId = opts.gateId;
+      if (!gateId) {
+        const gList = this.getGatesForAttachment();
+        gateId = gList[0]?.id;
+      }
+      if (!gateId) {
+        this.canvas.requestRenderAll();
+        this.callbacks.onSelectionChanged(meta);
+        this.callbacks.onSceneChanged();
+        return;
+      }
+      const gateMeta = this.placedObjects.find((entry) => entry.id === gateId);
       const stackCount = getGateStackCount(gateMeta || undefined);
       const requested = Number.parseInt(String(opts.level ?? 1), 10);
       const clampedLevel = Number.isFinite(requested)
         ? Math.min(stackCount, Math.max(1, requested))
         : stackCount;
-      meta.attachedTo = opts.gateId;
+      meta.attachedTo = gateId;
       meta.attachmentSide = opts.side ?? "left";
       meta.attachedLevel = clampedLevel;
       meta.attachedCubeTo = null;
@@ -1274,13 +1321,42 @@ export class CanvasController {
     }
 
     if (meta.attachedTo || meta.attachedCubeTo) {
+      const newGate = meta.attachedTo;
+      const newCube = meta.attachedCubeTo;
+      const firstAttach = !wasAttached;
+      const switchedTarget =
+        (newGate && newGate !== prevGateId) || (newCube && newCube !== prevCubeId);
+      if (firstAttach || switchedTarget) {
+        if (newGate) {
+          const gm = this.placedObjects.find((e) => e.id === newGate);
+          if (gm) {
+            meta.fabricObject.set({ angle: gm.fabricObject.angle ?? 0 });
+          }
+        } else if (newCube) {
+          const cm = this.placedObjects.find((e) => e.id === newCube);
+          if (cm) {
+            meta.fabricObject.set({ angle: cm.fabricObject.angle ?? 0 });
+          }
+        }
+      }
       this.updateAttachedPolePosition(meta);
     } else if (meta.fabricObject) {
       meta.fabricObject.set({ opacity: 1 });
     }
+    this.applyAttachedPoleMoveLock(meta);
     this.canvas.requestRenderAll();
     this.callbacks.onSelectionChanged(meta);
     this.callbacks.onSceneChanged();
+  }
+
+  /**
+   * Attached padded poles: fixed XY (follows gate/cube in code) but free rotation
+   * for the sensing line. Standalone: full drag.
+   */
+  private applyAttachedPoleMoveLock(poleMeta: PlacedObjectMeta): void {
+    if (poleMeta.config.id !== "padded-pole" || !poleMeta.fabricObject) return;
+    const lock = !!(poleMeta.attachedTo || poleMeta.attachedCubeTo);
+    poleMeta.fabricObject.set({ lockMovementX: lock, lockMovementY: lock });
   }
 
 
@@ -1418,8 +1494,11 @@ export class CanvasController {
   private updateAttachedPolePosition(poleMeta: PlacedObjectMeta): void {
     if (!poleMeta.attachedTo && !poleMeta.attachedCubeTo) {
       if (poleMeta.fabricObject) poleMeta.fabricObject.set({ opacity: 1 });
+      this.applyAttachedPoleMoveLock(poleMeta);
       return;
     }
+
+    const keepAngle = poleMeta.fabricObject.angle ?? 0;
 
     if (poleMeta.attachedCubeTo) {
       const cubeMeta = this.placedObjects.find((m) => m.id === poleMeta.attachedCubeTo);
@@ -1427,6 +1506,7 @@ export class CanvasController {
         poleMeta.attachedCubeTo = null;
         poleMeta.attachedCubeCorner = null;
         if (poleMeta.fabricObject) poleMeta.fabricObject.set({ opacity: 1 });
+        this.applyAttachedPoleMoveLock(poleMeta);
         return;
       }
       const poleInsetMeters =
@@ -1443,14 +1523,17 @@ export class CanvasController {
           ? poleMeta.config.attachHeightOffsetMeters
           : 0;
       const cubeHeightBoost = 0.5;
-      const newPos: Position = {
-        ...cubePos,
-        altitude: (cubePos.altitude || 0) + heightOffset + cubeHeightBoost,
-      };
-      this.placeObjectAt(poleMeta.fabricObject, newPos);
-      if (newPos.altitude !== undefined) poleMeta.altitude = newPos.altitude;
+      const cubeAlt = (cubePos.altitude || 0) + heightOffset + cubeHeightBoost;
+      this.placeObjectAt(poleMeta.fabricObject, {
+        x: cubePos.x,
+        y: cubePos.y,
+        angle: keepAngle,
+        altitude: cubeAlt,
+      });
+      poleMeta.altitude = cubeAlt;
       poleMeta.fabricObject.set({ opacity: 0.85 });
       this.updateObjectMetadata(poleMeta.fabricObject);
+      this.applyAttachedPoleMoveLock(poleMeta);
       return;
     }
 
@@ -1460,6 +1543,7 @@ export class CanvasController {
       poleMeta.attachmentSide = null;
       poleMeta.attachedLevel = null;
       if (poleMeta.fabricObject) poleMeta.fabricObject.set({ opacity: 1 });
+      this.applyAttachedPoleMoveLock(poleMeta);
       return;
     }
     const stackCount = getGateStackCount(gateMeta);
@@ -1474,10 +1558,16 @@ export class CanvasController {
       poleMeta.attachmentSide || "left",
       clampedLevel
     );
-    this.placeObjectAt(poleMeta.fabricObject, newPos);
+    this.placeObjectAt(poleMeta.fabricObject, {
+      x: newPos.x,
+      y: newPos.y,
+      angle: keepAngle,
+      altitude: newPos.altitude,
+    });
     if (newPos.altitude !== undefined) poleMeta.altitude = newPos.altitude;
     poleMeta.fabricObject.set({ opacity: 0.85 });
     this.updateObjectMetadata(poleMeta.fabricObject);
+    this.applyAttachedPoleMoveLock(poleMeta);
   }
 
   private updateObjectMetadata(object: fabric.Object): void {
@@ -1500,7 +1590,15 @@ export class CanvasController {
   private resnapAll(): void {
     if (!this.settings.snappingEnabled) return;
     this.placedObjects.forEach((entry) => {
-      this.snapObjectTransform(entry.fabricObject);
+      if (
+        entry.config.id === "padded-pole" &&
+        (entry.attachedTo || entry.attachedCubeTo)
+      ) {
+        this.updateAttachedPolePosition(entry);
+        this.snapObjectTransform(entry.fabricObject);
+      } else {
+        this.snapObjectTransform(entry.fabricObject);
+      }
       this.updateObjectMetadata(entry.fabricObject);
       entry.fabricObject.setCoords();
     });
@@ -1706,9 +1804,11 @@ export class CanvasController {
       const object = event.target;
       if (!object || !this.metaByObjectId.get(object)) return;
       const meta = this.metaByObjectId.get(object);
-      if (meta && meta.attachedTo) {
+      if (meta && (meta.attachedTo || meta.attachedCubeTo)) {
         this.updateAttachedPolePosition(meta);
+        this.snapObjectTransform(object);
         this.canvas.requestRenderAll();
+        this.callbacks.onSceneChanged();
         return;
       }
       this.snapObjectTransform(object);
@@ -1716,6 +1816,13 @@ export class CanvasController {
       if (meta && isGateConfig(meta.config)) {
         this.placedObjects.forEach((poleMeta) => {
           if (poleMeta.attachedTo === meta.id) {
+            this.updateAttachedPolePosition(poleMeta);
+          }
+        });
+      }
+      if (meta && isCubeConfig(meta.config)) {
+        this.placedObjects.forEach((poleMeta) => {
+          if (poleMeta.attachedCubeTo === meta.id) {
             this.updateAttachedPolePosition(poleMeta);
           }
         });
@@ -1744,6 +1851,16 @@ export class CanvasController {
               poleMeta.attachedTo = null;
               poleMeta.attachmentSide = null;
               poleMeta.attachedLevel = null;
+              this.updateAttachedPolePosition(poleMeta);
+            }
+          });
+        }
+        if (isCubeConfig(meta.config)) {
+          this.placedObjects.forEach((poleMeta) => {
+            if (poleMeta.attachedCubeTo === meta.id) {
+              poleMeta.attachedCubeTo = null;
+              poleMeta.attachedCubeCorner = null;
+              this.updateAttachedPolePosition(poleMeta);
             }
           });
         }

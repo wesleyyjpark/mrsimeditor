@@ -12,11 +12,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
 }
 
 /**
- * Central key registry. Bind in <App> via <KeyboardLayer />.
- *
- * Layout:
- *   - Single-key actions (S, L, R, F, B, ?, Delete, +, -, Esc, Ctrl+D)
- *   - Modifier-key actions (Ctrl+K, Ctrl+Z, Ctrl+Shift+Z / Ctrl+Y)
+ * Central key registry for the logic on keyboard shortcuts
  */
 export function useKeyboardShortcuts() {
   const controller = useOptionalCanvasController();

@@ -52,7 +52,7 @@ export function ShortcutsDialog() {
         <DialogHeader>
           <DialogTitle>Keyboard shortcuts</DialogTitle>
           <DialogDescription>
-            Power-user keys for the canvas, palette, and global actions.
+            Key shortcuts for the canvas, palette, and global actions.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-6 sm:grid-cols-2">

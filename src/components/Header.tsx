@@ -1,5 +1,5 @@
-import { useRef } from "react";
-import { Download, FileUp, FolderOpen, Redo2, Trash2, Undo2 } from "lucide-react";
+import { useRef, useState } from "react";
+import { Download, FileUp, FolderOpen, HelpCircle, Redo2, Trash2, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 import { useOptionalCanvasController } from "../canvas/controllerContext";
 import { useEditorStore } from "../store/editorStore";
@@ -27,8 +27,10 @@ import {
 import { ThemeToggle } from "./ThemeToggle";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useHistoryStore } from "@/store/historyStore";
+import { HelpDialog } from "./HelpDialog";
 
 export function Header() {
+  const [helpOpen, setHelpOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const controller = useOptionalCanvasController();
 
@@ -160,6 +162,23 @@ export function Header() {
         hidden
         onChange={handleFileChange}
       />
+
+      <div className="mr-auto flex items-center gap-2">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="gap-1.5 text-muted-foreground"
+          aria-label="Quick help"
+          onClick={() => setHelpOpen(true)}
+        >
+          <HelpCircle className="h-4 w-4" />
+          Help
+        </Button>
+      </div>
+
+      <HelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
+
       <div className="ml-auto flex items-center gap-2">
         <Tooltip>
           <TooltipTrigger asChild>

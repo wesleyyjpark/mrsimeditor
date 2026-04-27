@@ -34,9 +34,9 @@ Known Issues:
 
 TO DO LIST
 - fix gate snapping to the grid properly not just y axis
-- add pole sensing 
 - icons for gate order
 - make favorites work
+- Allow gate face changes, gate sensing on gate stacks
 
 ## Project layout
 

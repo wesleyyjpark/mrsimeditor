@@ -13,7 +13,7 @@ export const QUAD_LADDER_ICON = "assets/quad-ladder.png";
 export const ICON_BASELINE_OFFSETS: Record<string, number> = {
   [GATE_ICON]: 50 / 638,
   [FLAG_ICON]: 285 / 2000,
-  [LEFT_PASS_FLAG_ICON]: 285 / 2000,
+  // Same path as FLAG_ICON fixes build issue as well
   [RIGHT_PASS_FLAG_ICON]: 285 / 2000,
   [CUBE_ICON]: 70 / 500,
   [DOUBLE_CUBE_ICON]: 70 / 500,

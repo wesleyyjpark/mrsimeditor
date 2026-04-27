@@ -727,7 +727,34 @@ export class CanvasController {
     object.setCoords();
   }
 
+  /**
+   * Small triangle just past the bottom edge of the footprint; tip points toward
+   * the gate center (inward, −Y). Mirrors the legacy top-edge marker but on the
+   * opposite narrow side.
+   */
+  private makeFrontMarkerInward(
+    baseColor: string,
+    arrowSize: number,
+    halfHeightPx: number
+  ): fabric.Triangle {
+    return new fabric.Triangle({
+      width: arrowSize,
+      height: arrowSize,
+      fill: baseColor,
+      originX: "center",
+      originY: "center",
+      left: 0,
+      top: halfHeightPx + arrowSize * 0.75,
+      angle: 0,
+      opacity: 0.95,
+      selectable: false,
+      evented: false,
+      strokeUniform: true,
+    });
+  }
+
   private async createFabricObject(config: ObjectConfig): Promise<fabric.Object> {
+    const showForward = config.showDirectionArrow !== false;
     const visualWidth = config.visualWidth !== undefined ? config.visualWidth : config.width;
     const visualHeight = config.visualHeight !== undefined ? config.visualHeight : config.height;
     const footprintWidth =
@@ -854,8 +881,24 @@ export class CanvasController {
           leftTip.set({ opacity: 0 });
           leftArrow.set({ opacity: 0 });
 
+          const forwardMarker: fabric.Object[] = showForward
+            ? (() => {
+                const f = this.makeFrontMarkerInward(baseColor, 8, radius);
+                return [f];
+              })()
+            : [];
+
           return new fabric.Group(
-            [leftLine, leftTip, leftArrow, rightLine, rightTip, rightArrow, dot],
+            [
+              leftLine,
+              leftTip,
+              leftArrow,
+              rightLine,
+              rightTip,
+              rightArrow,
+              dot,
+              ...forwardMarker,
+            ],
             {
               originX: "center",
               originY: "center",
@@ -871,22 +914,49 @@ export class CanvasController {
           );
         }
 
-        return new fabric.Circle({
-          radius,
-          fill: baseColor,
-          stroke: baseColor,
-          strokeWidth: 1,
-          originX: "center",
-          originY: "center",
-          selectable: true,
-          hasControls: true,
-          hasBorders: false,
-          lockScalingX: true,
-          lockScalingY: true,
-          perPixelTargetFind: true,
-          strokeUniform: true,
-          shadow: shadow ?? undefined,
-        });
+        if (!showForward) {
+          return new fabric.Circle({
+            radius,
+            fill: baseColor,
+            stroke: baseColor,
+            strokeWidth: 1,
+            originX: "center",
+            originY: "center",
+            selectable: true,
+            hasControls: true,
+            hasBorders: false,
+            lockScalingX: true,
+            lockScalingY: true,
+            perPixelTargetFind: true,
+            strokeUniform: true,
+            shadow: shadow ?? undefined,
+          });
+        }
+        {
+          const dot = new fabric.Circle({
+            radius,
+            fill: baseColor,
+            stroke: baseColor,
+            strokeWidth: 1,
+            originX: "center",
+            originY: "center",
+            selectable: false,
+            evented: false,
+          });
+          const f = this.makeFrontMarkerInward(baseColor, 8, radius);
+          return new fabric.Group([dot, f], {
+            originX: "center",
+            originY: "center",
+            selectable: true,
+            hasControls: true,
+            hasBorders: false,
+            lockScalingX: true,
+            lockScalingY: true,
+            perPixelTargetFind: true,
+            strokeUniform: true,
+            shadow: shadow ?? undefined,
+          });
+        }
       }
 
       if (renderStyle === "outline") {
@@ -903,21 +973,9 @@ export class CanvasController {
           strokeUniform: true,
         });
         const parts: fabric.Object[] = [rect];
-        if (config.showDirectionArrow) {
-          const arrowSize = Math.max(10, footprintWidthPx * 0.12);
-          const arrow = new fabric.Triangle({
-            width: arrowSize,
-            height: arrowSize,
-            fill: baseColor,
-            originX: "center",
-            originY: "center",
-            left: 0,
-            top: -arrowSize * 0.8,
-            angle: 180,
-            selectable: false,
-            evented: false,
-          });
-          parts.push(arrow);
+        if (showForward) {
+          const arrowSize = Math.max(8, Math.min(footprintWidthPx * 0.12, 24));
+          parts.push(this.makeFrontMarkerInward(baseColor, arrowSize, footprintHeightPx / 2));
         }
         return new fabric.Group(parts, {
           originX: "center",
@@ -957,6 +1015,10 @@ export class CanvasController {
             evented: false,
           });
           parts.push(label);
+        }
+        if (showForward) {
+          const arrowSize = Math.max(7, Math.min(footprintWidthPx * 0.1, 20));
+          parts.push(this.makeFrontMarkerInward(baseColor, arrowSize, footprintHeightPx / 2));
         }
         return new fabric.Group(parts, {
           originX: "center",
@@ -1011,6 +1073,10 @@ export class CanvasController {
           });
           parts.push(label);
         }
+        if (showForward) {
+          const arrowSize = Math.max(7, Math.min(footprintWidthPx * 0.1, 20));
+          parts.push(this.makeFrontMarkerInward(baseColor, arrowSize, footprintHeightPx / 2));
+        }
         return new fabric.Group(parts, {
           originX: "center",
           originY: "center",
@@ -1031,9 +1097,10 @@ export class CanvasController {
         fabric.Image.fromURL(
           config.icon as string,
           (img) => {
+            const baseColor = config.fillColor || config.color || "#3f51b5";
             img.set({
               originX: "center",
-              originY: "bottom",
+              originY: "center",
               selectable: true,
               hasControls: true,
               hasBorders: false,
@@ -1044,8 +1111,29 @@ export class CanvasController {
             });
             const scale = Math.min(widthPx / (img.width ?? 1), heightPx / (img.height ?? 1));
             img.scale(scale);
-            img.data = { typeId: config.id };
-            resolve(img);
+            const sh = img.getScaledHeight();
+            if (showForward) {
+              const ar = this.makeFrontMarkerInward(
+                baseColor,
+                Math.max(6, Math.min(sh * 0.12, 18)),
+                sh / 2
+              );
+              const g = new fabric.Group([img, ar], {
+                originX: "center",
+                originY: "center",
+                selectable: true,
+                hasControls: true,
+                hasBorders: false,
+                lockScalingX: true,
+                lockScalingY: true,
+                perPixelTargetFind: true,
+                strokeUniform: true,
+                shadow: config.shadow ?? undefined,
+              });
+              resolve(g);
+            } else {
+              resolve(img);
+            }
           },
           { crossOrigin: "anonymous" }
         );

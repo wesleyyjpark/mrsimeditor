@@ -26,7 +26,6 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     placement: "macro",
     icon: GATE_ICON,
     renderStyle: "outline",
-    showDirectionArrow: true,
     paletteCategories: ["standard"],
     previewImage: "",
   },
@@ -47,7 +46,6 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     placement: "macro",
     icon: GATE_ICON,
     renderStyle: "outline",
-    showDirectionArrow: true,
     paletteCategories: ["favorites", "standard"],
     previewImage: "assets/gate-image.png",
   },
@@ -454,6 +452,7 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     shape: "square",
     fillColor: "#9ccc65",
     paletteHidden: true,
+    showDirectionArrow: false,
   },
 ];
 

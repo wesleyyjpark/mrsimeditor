@@ -29,7 +29,6 @@ const GRID_BOTTOM_MARGIN = 160;
 const DEFAULT_GRID_SIZE_METERS = 0.7;
 const MAJOR_GRID_METERS = 2.1;
 const DEFAULT_FORWARD_OFFSET_METERS = 16;
-const SNAP_GRID_FACTOR = 0.5;
 const ZOOM_MIN = 0.4;
 const ZOOM_MAX = 2.5;
 const ZOOM_STEP = 0.1;
@@ -194,9 +193,7 @@ export class CanvasController {
     this.canvas.dispose();
   }
 
-  /* ============================================================
-   *  Snapshot / restore for undo–redo (history store).
-   * ============================================================ */
+  /* Snapshot / restore for undo–redo (history store)*/
 
   /**
    * Returns a JSON-serializable snapshot of the current scene + counters that
@@ -317,6 +314,9 @@ export class CanvasController {
     ) {
       this.updateReferenceVisibility();
     }
+    if (settings.snappingEnabled !== undefined && this.settings.snappingEnabled && !prev.snappingEnabled) {
+      this.resnapAll();
+    }
     if (settings.rulerEnabled !== undefined && settings.rulerEnabled !== prev.rulerEnabled) {
       this.ruler.enabled = settings.rulerEnabled;
       if (!settings.rulerEnabled) {
@@ -346,9 +346,7 @@ export class CanvasController {
     window.addEventListener("resize", this.boundResize);
   }
 
-  /* ============================================================
-   * Geometry / coordinates
-   * ============================================================ */
+  /* Geometry / coordinates */
 
   private getGridOrigin(): { x: number; y: number } {
     return {
@@ -371,6 +369,22 @@ export class CanvasController {
     ctx.fillStyle = "#f9fbfd";
     ctx.fillRect(0, 0, majorSizePx, majorSizePx);
 
+    // Minor lines at every base grid step (matches snap step so users see what they snap to).
+    if (baseSpacingPx > 6 && majorMultiplier > 1) {
+      ctx.strokeStyle = "rgba(33, 33, 33, 0.08)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let i = 1; i < majorMultiplier; i++) {
+        const x = Math.round(i * baseSpacingPx) + 0.5;
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, majorSizePx);
+        ctx.moveTo(0, x);
+        ctx.lineTo(majorSizePx, x);
+      }
+      ctx.stroke();
+    }
+
+    // Major lines around the tile edges.
     ctx.strokeStyle = "rgba(33, 33, 33, 0.2)";
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -412,9 +426,7 @@ export class CanvasController {
     this.canvas.calcOffset();
   }
 
-  /* ============================================================
-   * Zoom / Pan
-   * ============================================================ */
+  /* Zoom / Pan */
 
   private clampZoom(value: number): number {
     return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, value));
@@ -498,9 +510,7 @@ export class CanvasController {
     this.canvas.requestRenderAll();
   }
 
-  /* ============================================================
-   * Object positioning
-   * ============================================================ */
+  /* Object positioning */
 
   private getConfigForObject(object: fabric.Object | undefined): ObjectConfig | null {
     const data = object?.data as { typeId?: string } | undefined;
@@ -539,9 +549,7 @@ export class CanvasController {
     };
   }
 
-  /* ============================================================
-   * Snapping
-   * ============================================================ */
+  /* Snapping logic */
 
   private checkGateSpacing(
     object: fabric.Object,
@@ -581,21 +589,16 @@ export class CanvasController {
       return;
     }
     const origin = this.getGridOrigin();
-    const gridPx = this.settings.gridSizeMeters * PIXELS_PER_METER;
-    const snapGridPx = Math.max(4, gridPx * SNAP_GRID_FACTOR);
+    // Snap to the visible grid lines (one snap step = one minor grid line = gridSizeMeters).
+    const snapGridPx = Math.max(4, this.settings.gridSizeMeters * PIXELS_PER_METER);
     const anchorOffset = this.getAnchorOffsetPx(object);
     const baseTop = (object.top ?? 0) - anchorOffset;
-    const SNAP_TOLERANCE = snapGridPx * 0.4;
     const currentX = (object.left ?? 0) - origin.x;
     const currentY = origin.y - baseTop;
     const gridX = Math.round(currentX / snapGridPx);
     const gridY = Math.round(currentY / snapGridPx);
-    const snappedXPos = gridX * snapGridPx;
-    const snappedYPos = gridY * snapGridPx;
-    const distanceX = Math.abs(currentX - snappedXPos);
-    const distanceY = Math.abs(currentY - snappedYPos);
-    let finalSnappedX = distanceX <= SNAP_TOLERANCE ? snappedXPos : currentX;
-    let finalSnappedY = distanceY <= SNAP_TOLERANCE ? snappedYPos : currentY;
+    let finalSnappedX = gridX * snapGridPx;
+    let finalSnappedY = gridY * snapGridPx;
     const snappedXMeters = finalSnappedX / PIXELS_PER_METER;
     const snappedYMeters = finalSnappedY / PIXELS_PER_METER;
     const spacingAdjust = this.checkGateSpacing(object, snappedXMeters, snappedYMeters);
@@ -877,9 +880,7 @@ export class CanvasController {
     });
   }
 
-  /* ============================================================
-   * Reference layout
-   * ============================================================ */
+  /* Reference layout */
 
   private async createReferenceObjects(): Promise<void> {
     this.referenceObjects = [];
@@ -914,9 +915,9 @@ export class CanvasController {
     this.canvas.requestRenderAll();
   }
 
-  /* ============================================================
+  /* 
    * Object lifecycle
-   * ============================================================ */
+   *  */
 
   private allocateEntityName(prefix: string): string {
     const count = (this.entityCounters[prefix] || 0) + 1;
@@ -1116,9 +1117,7 @@ export class CanvasController {
     this.callbacks.onSceneChanged();
   }
 
-  /* ============================================================
-   * Attachment math (poles)
-   * ============================================================ */
+  /* Attachment math calculations for the poles */
 
   private calculateAttachedPolePosition(
     poleMeta: PlacedObjectMeta,
@@ -1298,9 +1297,7 @@ export class CanvasController {
     this.callbacks.onSceneChanged();
   }
 
-  /* ============================================================
-   * Ruler
-   * ============================================================ */
+  /* Ruler (im gonna fix this) */
 
   private clearRulerGraphics(): void {
     if (this.ruler.line) {
@@ -1408,9 +1405,7 @@ export class CanvasController {
     this.updateRulerOverlay(new fabric.Point(pointer.x, pointer.y));
   }
 
-  /* ============================================================
-   * Drag-and-drop / scene events
-   * ============================================================ */
+  /* Drag-and-drop / scene events */
 
   handleDragOver(event: DragEvent): void {
     event.preventDefault();
@@ -1615,9 +1610,7 @@ export class CanvasController {
     horizontal.sendToBack();
   }
 
-  /* ============================================================
-   * Import / Export (XML)
-   * ============================================================ */
+  /* Import / Export (XML) */
 
   async importXmlFromText(xmlText: string): Promise<string[]> {
     if (!xmlText) return [];
@@ -2064,9 +2057,7 @@ export class CanvasController {
     downloadText(lines.join("\n"), "track.xml");
   }
 
-  /* ============================================================
-   * Helpers exposed to React components
-   * ============================================================ */
+  /* Helpers exposed to React components */
 
   getGatesForAttachment(): PlacedObjectMeta[] {
     return this.placedObjects.filter((entry) => isGateConfig(entry.config));
@@ -2076,9 +2067,9 @@ export class CanvasController {
     return this.placedObjects.filter((entry) => isCubeConfig(entry.config));
   }
 
-  /* ============================================================
-   *  Multi-select bulk actions and alignment guides
-   * ============================================================ */
+ 
+  /* Multi-select bulk actions and alignment guides */
+  
 
   private alignmentGuideLines: fabric.Line[] = [];
 

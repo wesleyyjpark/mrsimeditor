@@ -25,11 +25,10 @@ The canvas is rendered with fabric
   preservation of editor metadata in `EditorMeta:` comments.
 
 TO DO LIST
-- make snapping into a button for user visibility
+- fix gate snapping to the grid properly not just y axis
 - add pole sensing 
-- drag around reorder gate order
 - icons for gate order
-- fix gate palette icon sizing
+- make favorites work
 
 ## Project layout
 

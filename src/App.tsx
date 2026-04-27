@@ -34,6 +34,7 @@ function metaToSnapshot(meta: PlacedObjectMeta | null): SelectedObjectSnapshot |
     attachedCubeCorner: meta.attachedCubeCorner ?? null,
     stackCount: meta.stackCount,
     sensingSide: meta.sensingSide ?? null,
+    sensingFacing: meta.sensingFacing ?? null,
   };
 }
 

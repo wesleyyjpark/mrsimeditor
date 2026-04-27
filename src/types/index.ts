@@ -45,6 +45,12 @@ export interface ObjectConfig {
    * a flag); rotating the pole rotates the line, so it mirrors the sensor. At least in theory...
    */
   sensingLineMeters?: number;
+  /**
+   * When set to `"flag"`, passage checkpoints use the flag sensor height, optional
+   * `flagPassage` list entries, and (when any passage is exported) `Flag.xml` for
+   * the mesh instead of a precomposed FlagPassLeft/Right include.
+   */
+  passageTarget?: "pole" | "flag";
   paletteCategories?: PaletteCategory[];
   paletteCategory?: PaletteCategory;
   paletteHidden?: boolean;
@@ -81,6 +87,11 @@ export interface PlacedObjectMeta {
    * `HalfPlanePassage{Left,Right}.xml` include.
    */
   sensingSide?: "left" | "right" | null;
+  /**
+   * For flags with `passageTarget: "flag"`: which side of the half-plane is the
+   * approach when adding legacy-style checkpoint strings (and default for new adds).
+   */
+  sensingFacing?: "front" | "back" | null;
   position?: { x: number; y: number };
   angle?: number;
 }

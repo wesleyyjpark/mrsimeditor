@@ -7,18 +7,25 @@ import {
   REFERENCE_LAYOUT,
   getGateStackCount,
   getGateStackSpacing,
+  getPassageTarget,
   isCubeConfig,
   isGateConfig,
   isStackableGateConfig,
+  normalizeFlagTypeId,
+  resolveMainIncludeFile,
 } from "../data/objects";
 import { ICON_BASELINE_OFFSETS } from "../data/icons";
 import type { ObjectConfig, PlacedObjectMeta, Position } from "../types";
 import {
+  FLAG_SENSOR_Z_METERS,
+  isFlagPassageCheckpoint,
   isPolePassageCheckpoint,
+  flagPassageExportName,
   POLE_SENSOR_Z_METERS,
   polePassageExportName,
   resolveCheckpointExportNames,
   type CheckpointOrderEntry,
+  type FlagPassageCheckpoint,
   type PolePassageCheckpoint,
 } from "../lib/checkpointOrder";
 import {
@@ -94,6 +101,7 @@ export interface SerializedPlaced {
   attachedCubeTo?: string | null;
   attachedCubeCorner?: string | null;
   sensingSide?: "left" | "right" | null;
+  sensingFacing?: "front" | "back" | null;
 }
 
 export interface SceneSnapshotShape {
@@ -236,6 +244,7 @@ export class CanvasController {
       attachedCubeTo: m.attachedCubeTo ?? null,
       attachedCubeCorner: m.attachedCubeCorner ?? null,
       sensingSide: m.sensingSide ?? null,
+      sensingFacing: m.sensingFacing ?? null,
     }));
     return {
       canvas: json,
@@ -269,9 +278,20 @@ export class CanvasController {
               data?: { id?: string; typeId?: string };
             }).data;
             if (!data?.id || !data.typeId) continue;
-            const config = OBJECT_LOOKUP[data.typeId];
+            const normalizedId = normalizeFlagTypeId(data.typeId);
+            const config = OBJECT_LOOKUP[normalizedId.typeId];
             if (!config) continue;
+            if (normalizedId.typeId !== data.typeId) {
+              (obj as fabric.Object & { data?: { id?: string; typeId?: string } }).data = {
+                ...data,
+                typeId: normalizedId.typeId,
+              };
+            }
             const stored = placedById.get(data.id);
+            const defaultSensing =
+              config.sensingLineMeters && config.sensingLineMeters > 0
+                ? (normalizedId.legacySensingSide ?? this.initialSensingSideForConfig(config))
+                : null;
             const meta: PlacedObjectMeta = {
               id: data.id,
               config,
@@ -285,10 +305,17 @@ export class CanvasController {
               attachedCubeTo: stored?.attachedCubeTo ?? null,
               attachedCubeCorner: stored?.attachedCubeCorner ?? null,
               sensingSide:
-                stored?.sensingSide ??
-                (config.sensingLineMeters && config.sensingLineMeters > 0
-                  ? "right"
-                  : null),
+                stored?.sensingSide === "left" || stored?.sensingSide === "right"
+                  ? stored.sensingSide
+                  : defaultSensing,
+              sensingFacing:
+                getPassageTarget(config) === "flag" &&
+                config.sensingLineMeters &&
+                config.sensingLineMeters > 0
+                  ? stored?.sensingFacing === "back"
+                    ? "back"
+                    : "front"
+                  : null,
             };
             this.applyVisualDefaults(obj, config);
             this.placedObjects.push(meta);
@@ -809,7 +836,10 @@ export class CanvasController {
                 evented: false,
               }
             );
-            (tri as fabric.Object & { data?: Record<string, unknown> }).data = { sensingDir: side };
+            (tri as fabric.Object & { data?: Record<string, unknown> }).data = {
+              sensingDir: side,
+              entryArrow: true,
+            };
             return tri;
           };
           const rightLine = makeLine("right");
@@ -1135,10 +1165,15 @@ export class CanvasController {
       entityName,
       altitude: config.altitude ?? 0,
       stackCount: isStackableGateConfig(config) ? 1 : undefined,
-      sensingSide: hasSensing ? "right" : null,
+      sensingSide: hasSensing ? this.initialSensingSideForConfig(config) : null,
+      sensingFacing:
+        hasSensing && getPassageTarget(config) === "flag" ? "front" : null,
     };
     this.placedObjects.push(metadata);
     this.metaByObjectId.set(fabricObject, metadata);
+    if (hasSensing) {
+      this.applySensingSideVisibility(metadata);
+    }
     this.updateObjectMetadata(fabricObject);
     this.setActiveMeta(metadata);
     this.canvas.requestRenderAll();
@@ -1168,6 +1203,7 @@ export class CanvasController {
         altitude: meta.altitude,
         stackCount: meta.stackCount,
         sensingSide: meta.sensingSide ?? null,
+        sensingFacing: meta.sensingFacing ?? null,
       };
       this.applyVisualDefaults(cloned, meta.config);
       this.placedObjects.push(newMeta);
@@ -1372,6 +1408,50 @@ export class CanvasController {
       child.set({ opacity: dir === side ? 1 : 0 });
     }
     (obj as fabric.Object & { dirty?: boolean }).dirty = true;
+    if (getPassageTarget(meta.config) === "flag") {
+      this.applySensingFacingEntryArrows(meta);
+    }
+  }
+
+  /**
+   * For flags: The back approach mirrors the small entry marker to the other side
+   * of the dashed line (and flips it) to match a 180° half-plane in export.
+   */
+  private applySensingFacingEntryArrows(meta: PlacedObjectMeta): void {
+    if (getPassageTarget(meta.config) !== "flag") return;
+    const m = meta.config.sensingLineMeters;
+    if (typeof m !== "number" || m <= 0) return;
+    const obj = meta.fabricObject as fabric.Group | undefined;
+    if (!obj || typeof (obj as fabric.Group).getObjects !== "function") return;
+    const facing = meta.sensingFacing === "back" ? "back" : "front";
+    const lineLengthPx = m * PIXELS_PER_METER;
+    const h = 9; // keep in sync with makeEntryArrow
+    for (const child of (obj as fabric.Group).getObjects()) {
+      const data = (child as fabric.Object & { data?: { entryArrow?: boolean; sensingDir?: "left" | "right" } })
+        .data;
+      if (!data?.entryArrow || !data.sensingDir) continue;
+      const sign = data.sensingDir === "right" ? 1 : -1;
+      const cx = (lineLengthPx / 2) * sign;
+      // small arrow position math
+      if (facing === "back") {
+        child.set({
+          left: cx,
+          top: -(10 + h),
+          scaleY: -1,
+          originX: "center",
+          originY: "top",
+        });
+      } else {
+        child.set({
+          left: cx,
+          top: 2,
+          scaleY: 1,
+          originX: "center",
+          originY: "top",
+        });
+      }
+    }
+    (obj as fabric.Object & { dirty?: boolean }).dirty = true;
   }
 
 
@@ -1386,6 +1466,24 @@ export class CanvasController {
     this.canvas.requestRenderAll();
     this.callbacks.onSelectionChanged(meta);
     this.callbacks.onSceneChanged();
+  }
+
+  setActiveSensingFacing(facing: "front" | "back"): void {
+    const meta = this.activeMeta;
+    if (!meta) return;
+    if (getPassageTarget(meta.config) !== "flag") return;
+    if (!meta.config.sensingLineMeters || !(meta.config.sensingLineMeters > 0)) return;
+    if ((meta.sensingFacing ?? "front") === facing) return;
+    meta.sensingFacing = facing;
+    this.applySensingFacingEntryArrows(meta);
+    this.updateObjectMetadata(meta.fabricObject);
+    this.canvas.requestRenderAll();
+    this.callbacks.onSelectionChanged(meta);
+    this.callbacks.onSceneChanged();
+  }
+
+  private initialSensingSideForConfig(_config: ObjectConfig): "left" | "right" {
+    return "right";
   }
 
   /**
@@ -2029,9 +2127,12 @@ export class CanvasController {
       );
 
       let typeConfig: ObjectConfig | null = null;
+      let importFlagSensing: "left" | "right" | null = null;
       const typeId = meta?.typeId as string | undefined;
       if (typeId) {
-        typeConfig = OBJECT_LOOKUP[typeId] || null;
+        const n = normalizeFlagTypeId(typeId);
+        typeConfig = OBJECT_LOOKUP[n.typeId] || null;
+        if (n.legacySensingSide) importFlagSensing = n.legacySensingSide;
       }
 
       if (!typeConfig) {
@@ -2043,6 +2144,15 @@ export class CanvasController {
           OBJECT_CATALOG.find((entry) => entry.macroName === macroName) ||
           OBJECT_CATALOG.find((entry) => entry.includeFile === includeFile) ||
           null;
+        if (!typeConfig && includeFile) {
+          if (includeFile.includes("FlagPassLeft")) {
+            typeConfig = OBJECT_LOOKUP["flag"];
+            importFlagSensing = "left";
+          } else if (includeFile.includes("FlagPassRight")) {
+            typeConfig = OBJECT_LOOKUP["flag"];
+            importFlagSensing = "right";
+          }
+        }
       }
 
       if (
@@ -2080,6 +2190,8 @@ export class CanvasController {
         attachedCubeCorner: meta?.attachedCubeCorner as string | null,
         stackCount: meta?.stackCount as number | undefined,
         sensingSide: meta?.sensingSide as "left" | "right" | null,
+        sensingFacing: meta?.sensingFacing as "front" | "back" | null,
+        importFlagSensing,
       });
 
       const metaId = meta?.id as string | undefined;
@@ -2161,6 +2273,9 @@ export class CanvasController {
       attachedCubeCorner?: string | null;
       stackCount?: number;
       sensingSide?: "left" | "right" | null;
+      sensingFacing?: "front" | "back" | null;
+      /** From old type id or Include path when importing unified `flag`. */
+      importFlagSensing?: "left" | "right" | null;
     }
   ): Promise<PlacedObjectMeta> {
     const fabricObject = await this.createFabricObject(config);
@@ -2175,6 +2290,7 @@ export class CanvasController {
         ? meta.entityName
         : this.allocateEntityName(config.entityPrefix);
     const hasSensing = !!(config.sensingLineMeters && config.sensingLineMeters > 0);
+    const isFlag = getPassageTarget(config) === "flag";
     const metadata: PlacedObjectMeta = {
       id: meta.id || createUniqueId(),
       config,
@@ -2192,8 +2308,17 @@ export class CanvasController {
       sensingSide: hasSensing
         ? meta.sensingSide === "left" || meta.sensingSide === "right"
           ? meta.sensingSide
-          : "right"
+          : isFlag &&
+              (meta.importFlagSensing === "left" || meta.importFlagSensing === "right")
+            ? meta.importFlagSensing
+            : this.initialSensingSideForConfig(config)
         : null,
+      sensingFacing:
+        hasSensing && isFlag
+          ? meta.sensingFacing === "back" || meta.sensingFacing === "front"
+            ? meta.sensingFacing
+            : "front"
+          : null,
     };
     this.updateEntityCounterFromName(metadata.entityName);
     this.placedObjects.push(metadata);
@@ -2206,26 +2331,67 @@ export class CanvasController {
   }
 
   /**
-   * Collects half-plane passage sensors to emit for one pole. Structured
-   * `polePassage` entries get per-capture angle; plain legacy strings for the
-   * entity name (no structures) get N copies at the current `sensingSide`.
+   * Collects half-plane passage sensors. Structured `polePassage` / `flagPassage`
+   * entries get per-capture angle (and for flags, `facing`); legacy plain entity
+   * name strings get N copies at the current `sensingSide` / `sensingFacing`.
    */
-  private collectPolePassageSensors(
+  private collectPassageSensors(
     entry: PlacedObjectMeta,
     checkpointOrder: CheckpointOrderEntry[]
-  ): { subEntityName: string; relativeAngleDeg: number; side: "left" | "right" }[] {
+  ): {
+    subEntityName: string;
+    relativeAngleDeg: number;
+    side: "left" | "right";
+    zMeters: number;
+    facing: "front" | "back";
+  }[] {
     const hasSensing = !!(entry.config.sensingLineMeters && entry.config.sensingLineMeters > 0);
     if (!hasSensing) return [];
     const fabricAngle = entry.fabricObject.angle ?? 0;
+    const gNow = this.settings.globalRotation || 0;
+    const target = getPassageTarget(entry.config);
+
+    if (target === "flag") {
+      const structured = checkpointOrder.filter(
+        (c): c is FlagPassageCheckpoint =>
+          isFlagPassageCheckpoint(c) && c.objectId === entry.id
+      );
+      if (structured.length > 0) {
+        return structured.map((p) => {
+          const gAdd = p.globalRotationAtAdd !== undefined ? p.globalRotationAtAdd : gNow;
+          const relativeAngleDeg = normalizeEditorAngle(
+            p.angleDeg - fabricAngle + (gAdd - gNow)
+          );
+          return {
+            subEntityName: flagPassageExportName(p),
+            relativeAngleDeg,
+            side: p.side,
+            zMeters: FLAG_SENSOR_Z_METERS,
+            facing: p.facing,
+          };
+        });
+      }
+      const legacyCount = checkpointOrder.filter(
+        (c) => typeof c === "string" && c.trim() === entry.entityName
+      ).length;
+      if (legacyCount === 0) return [];
+      const side: "left" | "right" = entry.sensingSide === "left" ? "left" : "right";
+      const facing: "front" | "back" = entry.sensingFacing === "back" ? "back" : "front";
+      return Array.from({ length: legacyCount }, (_, i) => ({
+        subEntityName: `${entry.entityName}_pass_legacy_${i}`,
+        relativeAngleDeg: 0,
+        side,
+        zMeters: FLAG_SENSOR_Z_METERS,
+        facing,
+      }));
+    }
+
     const structured = checkpointOrder.filter(
       (c): c is PolePassageCheckpoint => isPolePassageCheckpoint(c) && c.objectId === entry.id
     );
     if (structured.length > 0) {
-      const gNow = this.settings.globalRotation || 0;
       return structured.map((p) => {
         const gAdd = p.globalRotationAtAdd !== undefined ? p.globalRotationAtAdd : gNow;
-        // Compensate for both current pole angle and track global rotation so
-        // each passage keeps the world entry orientation from when it was added.
         const relativeAngleDeg = normalizeEditorAngle(
           p.angleDeg - fabricAngle + (gAdd - gNow)
         );
@@ -2233,6 +2399,8 @@ export class CanvasController {
           subEntityName: polePassageExportName(p),
           relativeAngleDeg,
           side: p.side,
+          zMeters: POLE_SENSOR_Z_METERS,
+          facing: "front" as const,
         };
       });
     }
@@ -2245,21 +2413,28 @@ export class CanvasController {
       subEntityName: `${entry.entityName}_pass_legacy_${i}`,
       relativeAngleDeg: 0,
       side,
+      zMeters: POLE_SENSOR_Z_METERS,
+      facing: "front" as const,
     }));
   }
 
-  private buildPolePassageSensorEntityLines(
+  private buildPassageSensorEntityLines(
     subEntityName: string,
     relativeAngleDeg: number,
-    side: "left" | "right"
+    side: "left" | "right",
+    zMeters: number,
+    facing: "front" | "back"
   ): string[] {
     const sensorIncludePath =
       side === "left"
         ? "/Data/Simulations/Multirotor/HalfPlanePassageLeft.xml"
         : "/Data/Simulations/Multirotor/HalfPlanePassageRight.xml";
+    const angleDeg = normalizeEditorAngle(
+      relativeAngleDeg + (facing === "back" ? 180 : 0)
+    );
     return [
       `        <Entity name="${subEntityName}">`,
-      `          <Transform z="${POLE_SENSOR_Z_METERS.toFixed(2)}" angleDegrees="${relativeAngleDeg.toFixed(1)}">`,
+      `          <Transform z="${zMeters.toFixed(2)}" angleDegrees="${angleDeg.toFixed(1)}">`,
       `            <Include file="${sensorIncludePath}"/>`,
       `          </Transform>`,
       `        </Entity>`,
@@ -2360,15 +2535,25 @@ export class CanvasController {
         attachedCubeCorner: entry.attachedCubeCorner || null,
         stackCount: entry.stackCount ?? null,
         sensingSide: entry.sensingSide ?? null,
+        sensingFacing: getPassageTarget(entry.config) === "flag" ? entry.sensingFacing ?? null : null,
       };
 
-      const passageSensors = this.collectPolePassageSensors(entry, checkpointOrder);
+      const passageSensors = this.collectPassageSensors(entry, checkpointOrder);
       const passageSensorLines: string[] = [];
       for (const p of passageSensors) {
         passageSensorLines.push(
-          ...this.buildPolePassageSensorEntityLines(p.subEntityName, p.relativeAngleDeg, p.side)
+          ...this.buildPassageSensorEntityLines(
+            p.subEntityName,
+            p.relativeAngleDeg,
+            p.side,
+            p.zMeters,
+            p.facing
+          )
         );
       }
+      const mainIncludeFile = resolveMainIncludeFile(entry.config, {
+        sensingSide: entry.sensingSide,
+      });
 
       const stackCount = getGateStackCount(entry);
       if (isStackableGateConfig(entry.config) && stackCount > 1) {
@@ -2390,7 +2575,7 @@ export class CanvasController {
           if (entry.config.placement === "macro") {
             lines.push(`          <Instance macro="${entry.config.macroName}"/>`);
           } else {
-            lines.push(`          <Include file="${entry.config.includeFile}"/>`);
+            lines.push(`          <Include file="${mainIncludeFile}"/>`);
           }
           if (passageSensorLines.length > 0 && i === 1) {
             lines.push(...passageSensorLines);
@@ -2444,7 +2629,7 @@ export class CanvasController {
         if (entry.config.placement === "macro") {
           lines.push(`          <Instance macro="${entry.config.macroName}"/>`);
         } else {
-          lines.push(`          <Include file="${entry.config.includeFile}"/>`);
+          lines.push(`          <Include file="${mainIncludeFile}"/>`);
         }
         if (passageSensorLines.length > 0) {
           lines.push(...passageSensorLines);
@@ -2466,6 +2651,7 @@ export class CanvasController {
         return {
           id: m.id,
           hasSensing: !!(m.config.sensingLineMeters && m.config.sensingLineMeters > 0),
+          passageTarget: getPassageTarget(m.config),
         };
       });
       resolvedNames.forEach((checkpoint, index) => {

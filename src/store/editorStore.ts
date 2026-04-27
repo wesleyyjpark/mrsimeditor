@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import {
+  makeFlagPassageCheckpoint,
   makePolePassageCheckpoint,
   normalizeCheckpointOrder,
   type CheckpointOrderEntry,
@@ -44,6 +45,7 @@ export interface SelectedObjectSnapshot {
   attachedCubeCorner?: string | null;
   stackCount?: number;
   sensingSide?: "left" | "right" | null;
+  sensingFacing?: "front" | "back" | null;
 }
 
 export interface PlacedSummary {
@@ -153,6 +155,14 @@ export interface EditorState {
     angleDeg: number;
     globalRotationAtAdd: number;
     side: "left" | "right";
+  }) => void;
+  addFlagPassageCheckpoint: (input: {
+    objectId: string;
+    entityName: string;
+    angleDeg: number;
+    globalRotationAtAdd: number;
+    side: "left" | "right";
+    facing: "front" | "back";
   }) => void;
   removeCheckpoint: (index: number) => void;
   moveCheckpoint: (index: number, delta: number) => void;
@@ -279,6 +289,19 @@ export const useEditorStore = create<EditorState>((set) => ({
         angleDeg: input.angleDeg,
         globalRotationAtAdd: input.globalRotationAtAdd,
         side: input.side,
+      });
+      return { checkpointOrder: [...s.checkpointOrder, entry] };
+    }),
+  addFlagPassageCheckpoint: (input) =>
+    set((s) => {
+      if (!input.objectId || !input.entityName.trim()) return s;
+      const entry = makeFlagPassageCheckpoint({
+        objectId: input.objectId,
+        entityName: input.entityName,
+        angleDeg: input.angleDeg,
+        globalRotationAtAdd: input.globalRotationAtAdd,
+        side: input.side,
+        facing: input.facing,
       });
       return { checkpointOrder: [...s.checkpointOrder, entry] };
     }),

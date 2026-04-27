@@ -280,32 +280,20 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     paletteCategories: ["champs"],
   },
   {
-    id: "flag-pass-right",
-    label: "Flag Pass Right",
+    id: "flag",
+    label: "Flag",
     entityPrefix: "trkFlag",
     includeFile: "/Data/Simulations/Multirotor/FlagPassRight.xml",
     width: 2,
     height: 2,
     altitude: 0,
-    color: "#ab47bc",
+    color: "#8e6abf",
     placement: "include",
     icon: FLAG_ICON,
     renderStyle: "point",
-    paletteCategories: ["favorites"],
-    previewImage: "",
-  },
-  {
-    id: "flag-pass-left",
-    label: "Flag Pass Left",
-    entityPrefix: "trkFlag",
-    includeFile: "/Data/Simulations/Multirotor/FlagPassLeft.xml",
-    width: 2,
-    height: 2,
-    altitude: 0,
-    color: "#7e57c2",
-    placement: "include",
-    icon: FLAG_ICON,
-    renderStyle: "point",
+    /** Shorter than pole: reads as flag span, not a full gate width. */
+    sensingLineMeters: 0.5,
+    passageTarget: "flag",
     paletteCategories: ["favorites"],
     previewImage: "",
   },
@@ -477,6 +465,12 @@ export const OBJECT_LOOKUP: Record<string, ObjectConfig> = OBJECT_CATALOG.reduce
   {} as Record<string, ObjectConfig>
 );
 
+const FLAG_UNIFIED = OBJECT_LOOKUP["flag"];
+if (FLAG_UNIFIED) {
+  OBJECT_LOOKUP["flag-pass-left"] = FLAG_UNIFIED;
+  OBJECT_LOOKUP["flag-pass-right"] = FLAG_UNIFIED;
+}
+
 const GATE_TYPE_IDS = new Set(["gate-5x5", "gate-7x7", "start-finish-5x5"]);
 const CUBE_TYPE_IDS = new Set(["pipe-cube", "pipe-double-cube"]);
 const STACKABLE_GATE_TYPE_IDS = new Set(["gate-5x5", "start-finish-5x5"]);
@@ -512,6 +506,43 @@ export function getGateStackSpacing(meta: { config: ObjectConfig } | null | unde
     return meta.config.stackSpacingMeters;
   }
   return meta.config.height || 2.1;
+}
+
+/** Fallback if an object is missing `includeFile` (palette flags use `FlagPassLeft` / `FlagPassRight`). */
+export const FLAG_BASE_INCLUDE = "/Data/Simulations/Multirotor/Flag.xml";
+
+/** Sim includes for the unified `id: "flag"` object; chosen from `sensingSide` on export. */
+export const FLAG_PASS_LEFT_INCLUDE = "/Data/Simulations/Multirotor/FlagPassLeft.xml";
+export const FLAG_PASS_RIGHT_INCLUDE = "/Data/Simulations/Multirotor/FlagPassRight.xml";
+
+/**
+ * Map old catalog ids to the single `flag` type. Used when rehydrating saves / imports.
+ */
+export function normalizeFlagTypeId(typeId: string): {
+  typeId: string;
+  /** Prefer when stored `sensingSide` is absent (legacy scene). */
+  legacySensingSide?: "left" | "right";
+} {
+  if (typeId === "flag-pass-left") return { typeId: "flag", legacySensingSide: "left" };
+  if (typeId === "flag-pass-right") return { typeId: "flag", legacySensingSide: "right" };
+  return { typeId };
+}
+
+export function getPassageTarget(config: ObjectConfig | null | undefined): "pole" | "flag" {
+  return config?.passageTarget === "flag" ? "flag" : "pole";
+}
+
+/**
+ * Main mesh for export. The unified flag uses FlagPassLeft or FlagPassRight
+ */
+export function resolveMainIncludeFile(
+  config: ObjectConfig,
+  meta?: { sensingSide?: "left" | "right" | null }
+): string {
+  if (config.id === "flag" && getPassageTarget(config) === "flag") {
+    return meta?.sensingSide === "left" ? FLAG_PASS_LEFT_INCLUDE : FLAG_PASS_RIGHT_INCLUDE;
+  }
+  return config.includeFile ?? FLAG_BASE_INCLUDE;
 }
 
 export const REFERENCE_LAYOUT = [

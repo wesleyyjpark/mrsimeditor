@@ -28,6 +28,7 @@ export interface SceneSnapshot {
     attachedCubeTo?: string | null;
     attachedCubeCorner?: string | null;
     sensingSide?: "left" | "right" | null;
+    sensingFacing?: "front" | "back" | null;
   }>;
 }
 

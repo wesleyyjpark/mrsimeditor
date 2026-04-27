@@ -220,12 +220,15 @@ export function SelectedObjectPanel() {
               ) : null}
 
               {hasSensingLine ? (
-                <PoleSensingControls
+                <PassageSensingControls
                   controller={controller}
                   objectId={selected.id}
                   entityName={selected.entityName}
                   sensingSide={selected.sensingSide ?? "right"}
                   onSideChange={(side) => controller?.setActiveSensingSide(side)}
+                  variant={selected.config.passageTarget === "flag" ? "flag" : "pole"}
+                  sensingFacing={selected.sensingFacing ?? "front"}
+                  onFacingChange={(f) => controller?.setActiveSensingFacing(f)}
                 />
               ) : null}
 
@@ -614,20 +617,27 @@ function PoleAttachmentControls({ selected, placedSummary, onChange }: PoleAttac
   );
 }
 
-function PoleSensingControls({
+function PassageSensingControls({
   controller,
   objectId,
   entityName,
   sensingSide,
   onSideChange,
+  variant,
+  sensingFacing,
+  onFacingChange,
 }: {
   controller: CanvasController | null;
   objectId: string;
   entityName: string;
   sensingSide: "left" | "right";
   onSideChange: (side: "left" | "right") => void;
+  variant: "pole" | "flag";
+  sensingFacing: "front" | "back";
+  onFacingChange: (f: "front" | "back") => void;
 }) {
   const addPolePassageCheckpoint = useEditorStore((s) => s.addPolePassageCheckpoint);
+  const addFlagPassageCheckpoint = useEditorStore((s) => s.addFlagPassageCheckpoint);
 
   const handleAdd = () => {
     if (!objectId) {
@@ -636,16 +646,27 @@ function PoleSensingControls({
     }
     const snap = controller?.getPolePassageAddSnapshot();
     if (!snap) {
-      toast.error("Select a pole on the canvas, then add.");
+      toast.error("Select an object on the canvas, then add.");
       return;
     }
-    addPolePassageCheckpoint({
-      objectId,
-      entityName,
-      angleDeg: snap.fabricAngleDeg,
-      globalRotationAtAdd: snap.globalRotationDeg,
-      side: sensingSide,
-    });
+    if (variant === "flag") {
+      addFlagPassageCheckpoint({
+        objectId,
+        entityName,
+        angleDeg: snap.fabricAngleDeg,
+        globalRotationAtAdd: snap.globalRotationDeg,
+        side: sensingSide,
+        facing: sensingFacing,
+      });
+    } else {
+      addPolePassageCheckpoint({
+        objectId,
+        entityName,
+        angleDeg: snap.fabricAngleDeg,
+        globalRotationAtAdd: snap.globalRotationDeg,
+        side: sensingSide,
+      });
+    }
     toast.success("Checkpoint added");
   };
 
@@ -656,33 +677,66 @@ function PoleSensingControls({
         Passage Sensing
       </div>
       <p className="text-[11px] leading-snug text-muted-foreground">
-        The small arrow under the dashed line points at the entry side (right =
-        local +X, left = −X). Rotate the pole, choose side, then add — each
-        time you add a checkpoint, it locks that passage’s orientation in the export even if you rotate the pole later.
+        {variant === "flag" ? (
+          <>
+            A short line from the dot shows the pass side (Left and Right). “Approach” flips
+            the half-plane 180° so the same L/R can be flown from the front or the back. The export stores that angle even
+            if you rotate the flag later.
+          </>
+        ) : (
+          <>
+            The small arrow under the dashed line points at the entry side.
+          </>
+        )}
       </p>
       <div className="flex items-center justify-between gap-2">
         <Label
-          htmlFor={`pole-sensing-side-${entityName}`}
+          htmlFor={`pass-sensing-side-${entityName}`}
           className="text-[11px] text-muted-foreground"
         >
-          Sensor side
+          Pass side
         </Label>
         <Select
           value={sensingSide}
           onValueChange={(value) => onSideChange(value as "left" | "right")}
         >
           <SelectTrigger
-            id={`pole-sensing-side-${entityName}`}
+            id={`pass-sensing-side-${entityName}`}
             className="h-7 w-28 text-xs"
           >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="right">Right (+X)</SelectItem>
-            <SelectItem value="left">Left (-X)</SelectItem>
+            <SelectItem value="left">Left (−X)</SelectItem>
           </SelectContent>
         </Select>
       </div>
+      {variant === "flag" ? (
+        <div className="flex items-center justify-between gap-2">
+          <Label
+            htmlFor={`pass-sensing-facing-${entityName}`}
+            className="text-[11px] text-muted-foreground"
+          >
+            Approach
+          </Label>
+          <Select
+            value={sensingFacing}
+            onValueChange={(value) => onFacingChange(value as "front" | "back")}
+          >
+            <SelectTrigger
+              id={`pass-sensing-facing-${entityName}`}
+              className="h-7 w-32 text-xs"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="front">Front (default)</SelectItem>
+              <SelectItem value="back">Back (flip 180°)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      ) : null}
       <Button size="sm" className="w-full" onClick={handleAdd}>
         <Plus className="mr-2 h-3.5 w-3.5" />
         Add to Gate Order

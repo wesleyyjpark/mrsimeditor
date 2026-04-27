@@ -80,22 +80,6 @@ export function CanvasArea({ canvasRef, wrapperRef }: CanvasAreaProps) {
 
         <Separator orientation="vertical" className="h-6" />
 
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Toggle
-              size="sm"
-              pressed={showReference}
-              onPressedChange={toggleShowReference}
-              aria-label="Reference layout"
-            >
-              {showReference ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
-            </Toggle>
-          </TooltipTrigger>
-          <TooltipContent>
-            Reference Layout <Kbd className="ml-2">R</Kbd>
-          </TooltipContent>
-        </Tooltip>
-
         <Tooltip delayDuration={200}>
           <TooltipTrigger asChild>
             <div className="inline-flex h-8 items-center gap-2 rounded-md">
@@ -105,7 +89,7 @@ export function CanvasArea({ canvasRef, wrapperRef }: CanvasAreaProps) {
                 checked={snappingEnabled}
                 onCheckedChange={setSnappingEnabled}
               />
-              <Label htmlFor="editor-snap-enabled" className="cursor-pointer text-sm font-medium leading-none">
+              <Label htmlFor="editor-snap-enabled" className="text-xs cursor-pointer font-medium leading-none">
                 Snap to grid
               </Label>
             </div>
@@ -122,6 +106,26 @@ export function CanvasArea({ canvasRef, wrapperRef }: CanvasAreaProps) {
             </p>
           </TooltipContent>
         </Tooltip>
+
+        <Separator orientation="vertical" className="h-6" />
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Toggle
+              size="sm"
+              pressed={showReference}
+              onPressedChange={toggleShowReference}
+              aria-label="Reference layout"
+            >
+              {showReference ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+            </Toggle>
+          </TooltipTrigger>
+          <TooltipContent>
+            Reference Layout <Kbd className="ml-2">R</Kbd>
+          </TooltipContent>
+        </Tooltip>
+
+        
 
         <Tooltip>
           <TooltipTrigger asChild>
@@ -152,6 +156,9 @@ export function CanvasArea({ canvasRef, wrapperRef }: CanvasAreaProps) {
             Center & fit <Kbd className="ml-2">F</Kbd>
           </TooltipContent>
         </Tooltip>
+
+        /* Add tooltip help here */
+        
 
         <AlertDialog>
           <Tooltip>

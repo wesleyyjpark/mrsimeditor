@@ -14,6 +14,14 @@ import {
 import { ICON_BASELINE_OFFSETS } from "../data/icons";
 import type { ObjectConfig, PlacedObjectMeta, Position } from "../types";
 import {
+  isPolePassageCheckpoint,
+  POLE_SENSOR_Z_METERS,
+  polePassageExportName,
+  resolveCheckpointExportNames,
+  type CheckpointOrderEntry,
+  type PolePassageCheckpoint,
+} from "../lib/checkpointOrder";
+import {
   buildEditorMeta,
   createUniqueId,
   downloadText,
@@ -85,12 +93,13 @@ export interface SerializedPlaced {
   attachedLevel?: number | null;
   attachedCubeTo?: string | null;
   attachedCubeCorner?: string | null;
+  sensingSide?: "left" | "right" | null;
 }
 
 export interface SceneSnapshotShape {
   canvas: unknown;
   entityCounters: Record<string, number>;
-  checkpointOrder: string[];
+  checkpointOrder: CheckpointOrderEntry[];
   placed: SerializedPlaced[];
 }
 
@@ -226,6 +235,7 @@ export class CanvasController {
       attachedLevel: m.attachedLevel ?? null,
       attachedCubeTo: m.attachedCubeTo ?? null,
       attachedCubeCorner: m.attachedCubeCorner ?? null,
+      sensingSide: m.sensingSide ?? null,
     }));
     return {
       canvas: json,
@@ -274,10 +284,18 @@ export class CanvasController {
               attachedLevel: stored?.attachedLevel ?? null,
               attachedCubeTo: stored?.attachedCubeTo ?? null,
               attachedCubeCorner: stored?.attachedCubeCorner ?? null,
+              sensingSide:
+                stored?.sensingSide ??
+                (config.sensingLineMeters && config.sensingLineMeters > 0
+                  ? "right"
+                  : null),
             };
             this.applyVisualDefaults(obj, config);
             this.placedObjects.push(meta);
             this.metaByObjectId.set(obj, meta);
+            if (config.sensingLineMeters && config.sensingLineMeters > 0) {
+              this.applySensingSideVisibility(meta);
+            }
             this.updateObjectMetadata(obj);
           }
           // loadFromJSON wipes the canvas; rebuild the persistent reference
@@ -638,7 +656,26 @@ export class CanvasController {
       object.set({ fill: hexToRgba(baseColor, 0.65) });
     }
     if (config.renderStyle === "point") {
-      object.set({ hasControls: false, hasBorders: false });
+      const hasSensingLine =
+        typeof config.sensingLineMeters === "number" && config.sensingLineMeters > 0;
+      if (hasSensingLine) {
+        // Allow rotation so the user can aim the sensing line i.e change where the gate indicator is positioned relative to the pole; scaling is
+        // already locked, and we hide every handle except the rotation one.
+        object.set({ hasControls: true, hasBorders: false });
+        object.setControlsVisibility?.({
+          mtr: true,
+          tl: false,
+          tr: false,
+          bl: false,
+          br: false,
+          mt: false,
+          mb: false,
+          ml: false,
+          mr: false,
+        });
+      } else {
+        object.set({ hasControls: false, hasBorders: false });
+      }
     }
     object.set({ opacity: 1 });
     object.setCoords();
@@ -662,8 +699,131 @@ export class CanvasController {
       const baseColor = config.fillColor || config.color || "#3f51b5";
 
       if (renderStyle === "point") {
+        const radius = Math.max(4, Math.round(PIXELS_PER_METER * 0.12));
+        const sensingMeters = config.sensingLineMeters ?? 0;
+
+        if (sensingMeters > 0) {
+          const lineLengthPx = sensingMeters * PIXELS_PER_METER;
+          const tipSize = Math.max(8, Math.round(PIXELS_PER_METER * 0.18));
+
+          // Local origin (0, 0) is the pole's dot. We add a line+tip pair on
+          // BOTH sides (+X and -X) so the group's bbox is naturally symmetric
+          // on the dot — no balancer hack needed. The active side renders
+          // visible; the other has opacity 0. Toggling sides is just an
+          // opacity flip (see `applySensingSideVisibility`).
+          const dot = new fabric.Circle({
+            radius,
+            fill: baseColor,
+            stroke: baseColor,
+            strokeWidth: 1,
+            originX: "center",
+            originY: "center",
+            left: 0,
+            top: 0,
+            selectable: false,
+            evented: false,
+          });
+          const makeLine = (side: "left" | "right") => {
+            const sign = side === "right" ? 1 : -1;
+            const line = new fabric.Line(
+              side === "right"
+                ? [0, 0, lineLengthPx, 0]
+                : [-lineLengthPx, 0, 0, 0],
+              {
+                stroke: baseColor,
+                strokeWidth: 2,
+                strokeDashArray: [6, 4],
+                strokeUniform: true,
+                originX: "center",
+                originY: "center",
+                left: (lineLengthPx / 2) * sign,
+                top: 0,
+                selectable: false,
+                evented: false,
+              }
+            );
+            (line as fabric.Object & { data?: Record<string, unknown> }).data = {
+              sensingDir: side,
+            };
+            return line;
+          };
+          const makeTip = (side: "left" | "right") => {
+            const sign = side === "right" ? 1 : -1;
+            const tip = new fabric.Triangle({
+              width: tipSize,
+              height: tipSize,
+              fill: baseColor,
+              originX: "center",
+              originY: "center",
+              left: (lineLengthPx + tipSize / 2) * sign,
+              top: 0,
+              angle: side === "right" ? 90 : -90,
+              selectable: false,
+              evented: false,
+            });
+            (tip as fabric.Object & { data?: Record<string, unknown> }).data = {
+              sensingDir: side,
+            };
+            return tip;
+          };
+
+          // Small arrow on the "bottom" (+Y) of the sensing line, tip pointing
+          // at the line / pole — indicates entry side without R/L text.
+          const makeEntryArrow = (side: "left" | "right") => {
+            const sign = side === "right" ? 1 : -1;
+            const cx = (lineLengthPx / 2) * sign;
+            const h = 9;
+            const w = 10;
+            const tri = new fabric.Polygon(
+              [
+                { x: 0, y: 0 },
+                { x: -w / 2, y: h },
+                { x: w / 2, y: h },
+              ],
+              {
+                left: cx,
+                top: 2,
+                fill: baseColor,
+                originX: "center",
+                originY: "top",
+                selectable: false,
+                evented: false,
+              }
+            );
+            (tri as fabric.Object & { data?: Record<string, unknown> }).data = { sensingDir: side };
+            return tri;
+          };
+          const rightLine = makeLine("right");
+          const rightTip = makeTip("right");
+          const rightArrow = makeEntryArrow("right");
+          const leftLine = makeLine("left");
+          const leftTip = makeTip("left");
+          const leftArrow = makeEntryArrow("left");
+          // Default visible side is "right" (matches local +X). Snapshot/import
+          // restore flips this via `applySensingSideVisibility` if needed.
+          leftLine.set({ opacity: 0 });
+          leftTip.set({ opacity: 0 });
+          leftArrow.set({ opacity: 0 });
+
+          return new fabric.Group(
+            [leftLine, leftTip, leftArrow, rightLine, rightTip, rightArrow, dot],
+            {
+              originX: "center",
+              originY: "center",
+              selectable: true,
+              hasControls: true,
+              hasBorders: false,
+              lockScalingX: true,
+              lockScalingY: true,
+              perPixelTargetFind: true,
+              strokeUniform: true,
+              shadow: shadow ?? undefined,
+            }
+          );
+        }
+
         return new fabric.Circle({
-          radius: Math.max(4, Math.round(PIXELS_PER_METER * 0.12)),
+          radius,
           fill: baseColor,
           stroke: baseColor,
           strokeWidth: 1,
@@ -948,6 +1108,7 @@ export class CanvasController {
     this.canvas.setActiveObject(fabricObject);
     this.snapObjectTransform(fabricObject);
     const entityName = this.allocateEntityName(config.entityPrefix);
+    const hasSensing = !!(config.sensingLineMeters && config.sensingLineMeters > 0);
     const metadata: PlacedObjectMeta = {
       id: createUniqueId(),
       config,
@@ -955,6 +1116,7 @@ export class CanvasController {
       entityName,
       altitude: config.altitude ?? 0,
       stackCount: isStackableGateConfig(config) ? 1 : undefined,
+      sensingSide: hasSensing ? "right" : null,
     };
     this.placedObjects.push(metadata);
     this.metaByObjectId.set(fabricObject, metadata);
@@ -986,10 +1148,14 @@ export class CanvasController {
         entityName: this.allocateEntityName(meta.config.entityPrefix),
         altitude: meta.altitude,
         stackCount: meta.stackCount,
+        sensingSide: meta.sensingSide ?? null,
       };
       this.applyVisualDefaults(cloned, meta.config);
       this.placedObjects.push(newMeta);
       this.metaByObjectId.set(cloned, newMeta);
+      if (newMeta.sensingSide) {
+        this.applySensingSideVisibility(newMeta);
+      }
       this.updateObjectMetadata(cloned);
       this.canvas.setActiveObject(cloned);
       this.setActiveMeta(newMeta);
@@ -1115,6 +1281,51 @@ export class CanvasController {
     this.canvas.requestRenderAll();
     this.callbacks.onSelectionChanged(meta);
     this.callbacks.onSceneChanged();
+  }
+
+
+  private applySensingSideVisibility(meta: PlacedObjectMeta): void {
+    const obj = meta.fabricObject as fabric.Group | undefined;
+    if (!obj || typeof (obj as fabric.Group).getObjects !== "function") return;
+    const side: "left" | "right" = meta.sensingSide === "left" ? "left" : "right";
+    const children = (obj as fabric.Group).getObjects();
+    for (const child of children) {
+      const dir = (child as fabric.Object & { data?: { sensingDir?: "left" | "right" } })
+        .data?.sensingDir;
+      if (!dir) continue;
+      child.set({ opacity: dir === side ? 1 : 0 });
+    }
+    (obj as fabric.Object & { dirty?: boolean }).dirty = true;
+  }
+
+
+  setActiveSensingSide(side: "left" | "right"): void {
+    const meta = this.activeMeta;
+    if (!meta) return;
+    if (!meta.config.sensingLineMeters) return;
+    if ((meta.sensingSide ?? "right") === side) return;
+    meta.sensingSide = side;
+    this.applySensingSideVisibility(meta);
+    this.updateObjectMetadata(meta.fabricObject);
+    this.canvas.requestRenderAll();
+    this.callbacks.onSelectionChanged(meta);
+    this.callbacks.onSceneChanged();
+  }
+
+  /**
+   * Use when adding a pole passage checkpoint: reads the live fabric angle and
+   * global rotation so the stored snapshot matches the canvas (React selection
+   * can lag a frame behind after rotation).
+   */
+  getPolePassageAddSnapshot(): { fabricAngleDeg: number; globalRotationDeg: number } | null {
+    const m = this.activeMeta;
+    if (!m?.config.sensingLineMeters || !(m.config.sensingLineMeters > 0)) {
+      return null;
+    }
+    return {
+      fabricAngleDeg: m.fabricObject.angle ?? 0,
+      globalRotationDeg: this.settings.globalRotation || 0,
+    };
   }
 
   /* Attachment math calculations for the poles */
@@ -1751,6 +1962,7 @@ export class CanvasController {
         attachedCubeTo: meta?.attachedCubeTo as string | null,
         attachedCubeCorner: meta?.attachedCubeCorner as string | null,
         stackCount: meta?.stackCount as number | undefined,
+        sensingSide: meta?.sensingSide as "left" | "right" | null,
       });
 
       const metaId = meta?.id as string | undefined;
@@ -1831,6 +2043,7 @@ export class CanvasController {
       attachedCubeTo?: string | null;
       attachedCubeCorner?: string | null;
       stackCount?: number;
+      sensingSide?: "left" | "right" | null;
     }
   ): Promise<PlacedObjectMeta> {
     const fabricObject = await this.createFabricObject(config);
@@ -1844,6 +2057,7 @@ export class CanvasController {
       meta.entityName && meta.entityName !== "Track"
         ? meta.entityName
         : this.allocateEntityName(config.entityPrefix);
+    const hasSensing = !!(config.sensingLineMeters && config.sensingLineMeters > 0);
     const metadata: PlacedObjectMeta = {
       id: meta.id || createUniqueId(),
       config,
@@ -1858,15 +2072,84 @@ export class CanvasController {
       attachedCubeTo: meta.attachedCubeTo ?? null,
       attachedCubeCorner: meta.attachedCubeCorner ?? null,
       stackCount: meta.stackCount,
+      sensingSide: hasSensing
+        ? meta.sensingSide === "left" || meta.sensingSide === "right"
+          ? meta.sensingSide
+          : "right"
+        : null,
     };
     this.updateEntityCounterFromName(metadata.entityName);
     this.placedObjects.push(metadata);
     this.metaByObjectId.set(fabricObject, metadata);
+    if (hasSensing) {
+      this.applySensingSideVisibility(metadata);
+    }
     this.updateObjectMetadata(fabricObject);
     return metadata;
   }
 
-  exportXml(checkpointOrder: string[]): void {
+  /**
+   * Collects half-plane passage sensors to emit for one pole. Structured
+   * `polePassage` entries get per-capture angle; plain legacy strings for the
+   * entity name (no structures) get N copies at the current `sensingSide`.
+   */
+  private collectPolePassageSensors(
+    entry: PlacedObjectMeta,
+    checkpointOrder: CheckpointOrderEntry[]
+  ): { subEntityName: string; relativeAngleDeg: number; side: "left" | "right" }[] {
+    const hasSensing = !!(entry.config.sensingLineMeters && entry.config.sensingLineMeters > 0);
+    if (!hasSensing) return [];
+    const fabricAngle = entry.fabricObject.angle ?? 0;
+    const structured = checkpointOrder.filter(
+      (c): c is PolePassageCheckpoint => isPolePassageCheckpoint(c) && c.objectId === entry.id
+    );
+    if (structured.length > 0) {
+      const gNow = this.settings.globalRotation || 0;
+      return structured.map((p) => {
+        const gAdd = p.globalRotationAtAdd !== undefined ? p.globalRotationAtAdd : gNow;
+        // Compensate for both current pole angle and track global rotation so
+        // each passage keeps the world entry orientation from when it was added.
+        const relativeAngleDeg = normalizeEditorAngle(
+          p.angleDeg - fabricAngle + (gAdd - gNow)
+        );
+        return {
+          subEntityName: polePassageExportName(p),
+          relativeAngleDeg,
+          side: p.side,
+        };
+      });
+    }
+    const legacyCount = checkpointOrder.filter(
+      (c) => typeof c === "string" && c.trim() === entry.entityName
+    ).length;
+    if (legacyCount === 0) return [];
+    const side: "left" | "right" = entry.sensingSide === "left" ? "left" : "right";
+    return Array.from({ length: legacyCount }, (_, i) => ({
+      subEntityName: `${entry.entityName}_pass_legacy_${i}`,
+      relativeAngleDeg: 0,
+      side,
+    }));
+  }
+
+  private buildPolePassageSensorEntityLines(
+    subEntityName: string,
+    relativeAngleDeg: number,
+    side: "left" | "right"
+  ): string[] {
+    const sensorIncludePath =
+      side === "left"
+        ? "/Data/Simulations/Multirotor/HalfPlanePassageLeft.xml"
+        : "/Data/Simulations/Multirotor/HalfPlanePassageRight.xml";
+    return [
+      `        <Entity name="${subEntityName}">`,
+      `          <Transform z="${POLE_SENSOR_Z_METERS.toFixed(2)}" angleDegrees="${relativeAngleDeg.toFixed(1)}">`,
+      `            <Include file="${sensorIncludePath}"/>`,
+      `          </Transform>`,
+      `        </Entity>`,
+    ];
+  }
+
+  exportXml(checkpointOrder: CheckpointOrderEntry[]): void {
     const offsetForward = this.settings.globalOffsetX || 0;
     const offsetLateral = this.settings.globalOffsetY || 0;
     const globalRotationDegrees = this.settings.globalRotation || 0;
@@ -1959,7 +2242,16 @@ export class CanvasController {
         attachedCubeTo: entry.attachedCubeTo || null,
         attachedCubeCorner: entry.attachedCubeCorner || null,
         stackCount: entry.stackCount ?? null,
+        sensingSide: entry.sensingSide ?? null,
       };
+
+      const passageSensors = this.collectPolePassageSensors(entry, checkpointOrder);
+      const passageSensorLines: string[] = [];
+      for (const p of passageSensors) {
+        passageSensorLines.push(
+          ...this.buildPolePassageSensorEntityLines(p.subEntityName, p.relativeAngleDeg, p.side)
+        );
+      }
 
       const stackCount = getGateStackCount(entry);
       if (isStackableGateConfig(entry.config) && stackCount > 1) {
@@ -1982,6 +2274,9 @@ export class CanvasController {
             lines.push(`          <Instance macro="${entry.config.macroName}"/>`);
           } else {
             lines.push(`          <Include file="${entry.config.includeFile}"/>`);
+          }
+          if (passageSensorLines.length > 0 && i === 1) {
+            lines.push(...passageSensorLines);
           }
           lines.push("        </Entity>");
           lines.push("      </Transform>");
@@ -2015,6 +2310,9 @@ export class CanvasController {
           } else if (part.includeFile) {
             lines.push(`          <Include file="${part.includeFile}"/>`);
           }
+          if (passageSensorLines.length > 0 && index === 0) {
+            lines.push(...passageSensorLines);
+          }
           lines.push("        </Entity>");
           lines.push("      </Transform>");
         });
@@ -2031,6 +2329,9 @@ export class CanvasController {
         } else {
           lines.push(`          <Include file="${entry.config.includeFile}"/>`);
         }
+        if (passageSensorLines.length > 0) {
+          lines.push(...passageSensorLines);
+        }
         lines.push("        </Entity>");
         lines.push("      </Transform>");
       }
@@ -2042,8 +2343,16 @@ export class CanvasController {
     lines.push("            checkpoints:");
     lines.push("            [");
     if (Array.isArray(checkpointOrder) && checkpointOrder.length > 0) {
-      checkpointOrder.forEach((checkpoint, index) => {
-        const suffix = index === checkpointOrder.length - 1 ? "" : ",";
+      const resolvedNames = resolveCheckpointExportNames(checkpointOrder, (entityName) => {
+        const m = this.placedObjects.find((e) => e.entityName === entityName);
+        if (!m) return undefined;
+        return {
+          id: m.id,
+          hasSensing: !!(m.config.sensingLineMeters && m.config.sensingLineMeters > 0),
+        };
+      });
+      resolvedNames.forEach((checkpoint, index) => {
+        const suffix = index === resolvedNames.length - 1 ? "" : ",";
         lines.push(`                "${checkpoint}"${suffix}`);
       });
     }

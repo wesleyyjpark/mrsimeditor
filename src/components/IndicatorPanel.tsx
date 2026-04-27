@@ -117,12 +117,12 @@ export function IndicatorPanel() {
     }
     if (config.checkpointStyle === "entityOnly") {
       addCheckpoint(selected.entityName);
-      toast.success("Added to gate order");
+      toast.success("Checkpoint added");
       return;
     }
     const modeJoiner = config.modeJoiner ?? "";
     addCheckpoint(`${selected.entityName}.${faceSuffix}${modeJoiner}${indicatorMode}`);
-    toast.success("Added to gate order");
+    toast.success("Checkpoint added");
   };
 
   return (

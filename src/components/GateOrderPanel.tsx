@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { ArrowDown, ArrowUp, GripVertical, ListOrdered, Plus, X } from "lucide-react";
+import { toast } from "sonner";
+import { checkpointKey, formatCheckpointListLabel } from "../lib/checkpointOrder";
 import { useEditorStore } from "../store/editorStore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +22,7 @@ export function GateOrderPanel() {
     if (!draft.trim()) return;
     addCheckpoint(draft);
     setDraft("");
+    toast.success("Checkpoint added");
   };
 
   return (
@@ -62,7 +65,7 @@ export function GateOrderPanel() {
               const isDragging = draggingIndex === index;
               return (
                 <li
-                  key={`${checkpoint}-${index}`}
+                  key={checkpointKey(checkpoint, index)}
                   className={cn(
                     "group flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5 text-sm shadow-sm transition-colors",
                     "hover:border-primary/40",
@@ -82,7 +85,12 @@ export function GateOrderPanel() {
                   <span className="w-6 shrink-0 text-right font-mono text-xs text-muted-foreground tabular-nums">
                     {index + 1}.
                   </span>
-                  <span className="flex-1 truncate font-mono text-xs">{checkpoint}</span>
+                  <span
+                    className="flex-1 truncate font-mono text-xs"
+                    title={formatCheckpointListLabel(checkpoint)}
+                  >
+                    {formatCheckpointListLabel(checkpoint)}
+                  </span>
                   <Button
                     variant="ghost"
                     size="icon-sm"

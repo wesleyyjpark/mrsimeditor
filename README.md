@@ -1,6 +1,9 @@
 # Track Editor for MRSIM 
 Made by Wesley (wesleyfpv)
 
+URL FOR ACCESS: 
+[MRSIM EDITOR](https://mrsimeditor.wesleyyjpark.workers.dev/)
+
 ### Top-down track editor for MRSIM. 
 
 Built as a project to get me some more web dev experience and create tracks in MRSIM
@@ -23,6 +26,11 @@ The canvas is rendered with fabric
 - Global "Gate Order" view for editing the checkpoint sequence.
 - XML import / export to MRSIM XML format, including
   preservation of editor metadata in `EditorMeta:` comments.
+
+Known Issues:
+- You can't see the previous pole sensor orientation after you add a checkpoint and change it
+- All the champ size gates and hurdles are inaccurate when placed down
+
 
 TO DO LIST
 - fix gate snapping to the grid properly not just y axis

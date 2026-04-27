@@ -38,6 +38,13 @@ export interface ObjectConfig {
   shape?: "circle" | "square";
   renderStyle?: RenderStyle;
   showDirectionArrow?: boolean;
+  /**
+   * Setting on `renderStyle: "point"` object which draws a thin line extruding from
+   * the dot in the local +X direction with this length in meters. Indicates the
+   * passage-sensing side of a pole (same as to `HalfPlanePassageLeft.xml` on
+   * a flag); rotating the pole rotates the line, so it mirrors the sensor. At least in theory...
+   */
+  sensingLineMeters?: number;
   paletteCategories?: PaletteCategory[];
   paletteCategory?: PaletteCategory;
   paletteHidden?: boolean;
@@ -67,6 +74,13 @@ export interface PlacedObjectMeta {
   attachedCubeTo?: string | null;
   attachedCubeCorner?: string | null;
   stackCount?: number;
+  /**
+   * For poles with `sensingLineMeters > 0`: which side of the pole the passage
+   * sensor lives on. The editor visual line points in local +X for "right" and
+   * local -X for "left", and the export emits the matching
+   * `HalfPlanePassage{Left,Right}.xml` include.
+   */
+  sensingSide?: "left" | "right" | null;
   position?: { x: number; y: number };
   angle?: number;
 }

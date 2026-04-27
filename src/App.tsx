@@ -33,6 +33,7 @@ function metaToSnapshot(meta: PlacedObjectMeta | null): SelectedObjectSnapshot |
     attachedCubeTo: meta.attachedCubeTo ?? null,
     attachedCubeCorner: meta.attachedCubeCorner ?? null,
     stackCount: meta.stackCount,
+    sensingSide: meta.sensingSide ?? null,
   };
 }
 

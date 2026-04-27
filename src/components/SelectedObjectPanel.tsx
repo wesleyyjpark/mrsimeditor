@@ -7,6 +7,8 @@ import {
   ArrowUpDown,
   Hash,
   Box,
+  Radar,
+  Plus,
   AlignStartVertical,
   AlignCenterVertical,
   AlignEndVertical,
@@ -16,6 +18,8 @@ import {
   AlignHorizontalDistributeCenter,
   AlignVerticalDistributeCenter,
 } from "lucide-react";
+import { toast } from "sonner";
+import type { CanvasController } from "../canvas/CanvasController";
 import { useEditorStore } from "../store/editorStore";
 import { useOptionalCanvasController } from "../canvas/controllerContext";
 import { isStackableGateConfig } from "../data/objects";
@@ -80,6 +84,12 @@ export function SelectedObjectPanel() {
 
   const supportsIndicator = Boolean(selected && INDICATOR_CONFIGS[selected.config.id]);
   const isPole = selected?.config.id === "padded-pole";
+  const hasSensingLine = Boolean(
+    selected &&
+      selected.config.renderStyle === "point" &&
+      typeof selected.config.sensingLineMeters === "number" &&
+      selected.config.sensingLineMeters > 0
+  );
   const stackable = selected ? isStackableGateConfig(selected.config) : false;
 
   if (multiCount > 1) {
@@ -205,6 +215,16 @@ export function SelectedObjectPanel() {
                   selected={selected}
                   placedSummary={placedSummary}
                   onChange={(opts) => controller?.setActiveAttachment(opts)}
+                />
+              ) : null}
+
+              {hasSensingLine ? (
+                <PoleSensingControls
+                  controller={controller}
+                  objectId={selected.id}
+                  entityName={selected.entityName}
+                  sensingSide={selected.sensingSide ?? "right"}
+                  onSideChange={(side) => controller?.setActiveSensingSide(side)}
                 />
               ) : null}
 
@@ -538,6 +558,83 @@ function PoleAttachmentControls({ selected, placedSummary, onChange }: PoleAttac
           </div>
         </>
       ) : null}
+    </div>
+  );
+}
+
+function PoleSensingControls({
+  controller,
+  objectId,
+  entityName,
+  sensingSide,
+  onSideChange,
+}: {
+  controller: CanvasController | null;
+  objectId: string;
+  entityName: string;
+  sensingSide: "left" | "right";
+  onSideChange: (side: "left" | "right") => void;
+}) {
+  const addPolePassageCheckpoint = useEditorStore((s) => s.addPolePassageCheckpoint);
+
+  const handleAdd = () => {
+    if (!objectId) {
+      toast.error("No selection.");
+      return;
+    }
+    const snap = controller?.getPolePassageAddSnapshot();
+    if (!snap) {
+      toast.error("Select a pole on the canvas, then add.");
+      return;
+    }
+    addPolePassageCheckpoint({
+      objectId,
+      entityName,
+      angleDeg: snap.fabricAngleDeg,
+      globalRotationAtAdd: snap.globalRotationDeg,
+      side: sensingSide,
+    });
+    toast.success("Checkpoint added");
+  };
+
+  return (
+    <div className="space-y-2 rounded-md border border-border bg-muted/30 p-2">
+      <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+        <Radar className="h-3 w-3" />
+        Passage Sensing
+      </div>
+      <p className="text-[11px] leading-snug text-muted-foreground">
+        The small arrow under the dashed line points at the entry side (right =
+        local +X, left = −X). Rotate the pole, choose side, then add — each
+        click locks that passage’s orientation in the export.
+      </p>
+      <div className="flex items-center justify-between gap-2">
+        <Label
+          htmlFor={`pole-sensing-side-${entityName}`}
+          className="text-[11px] text-muted-foreground"
+        >
+          Sensor side
+        </Label>
+        <Select
+          value={sensingSide}
+          onValueChange={(value) => onSideChange(value as "left" | "right")}
+        >
+          <SelectTrigger
+            id={`pole-sensing-side-${entityName}`}
+            className="h-7 w-28 text-xs"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="right">Right (+X)</SelectItem>
+            <SelectItem value="left">Left (-X)</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <Button size="sm" className="w-full" onClick={handleAdd}>
+        <Plus className="mr-2 h-3.5 w-3.5" />
+        Add to Gate Order
+      </Button>
     </div>
   );
 }

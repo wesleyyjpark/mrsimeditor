@@ -102,6 +102,7 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     placement: "include",
     icon: FLAG_ICON,
     renderStyle: "point",
+    sensingLineMeters: 1.5,
     paletteCategories: ["champs"],
   },
   {
@@ -399,6 +400,7 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     anchorOffsetMeters: 0,
     cornerInsetMeters: 0.092,
     renderStyle: "point",
+    sensingLineMeters: 1.5,
     paletteCategories: ["favorites", "standard"],
     previewImage: "assets/pole-image.png",
   },
@@ -415,6 +417,7 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     icon: FLAG_ICON,
     anchorOffsetMeters: 0,
     renderStyle: "point",
+    sensingLineMeters: 1.5,
     paletteCategories: ["favorites", "standard"],
     previewImage: "assets/pole-image.png",
     compositeParts: [

@@ -1,4 +1,9 @@
 import { create } from "zustand";
+import {
+  makePolePassageCheckpoint,
+  normalizeCheckpointOrder,
+  type CheckpointOrderEntry,
+} from "../lib/checkpointOrder";
 import type {
   CanvasView,
   IndicatorMode,
@@ -38,6 +43,7 @@ export interface SelectedObjectSnapshot {
   attachedCubeTo?: string | null;
   attachedCubeCorner?: string | null;
   stackCount?: number;
+  sensingSide?: "left" | "right" | null;
 }
 
 export interface PlacedSummary {
@@ -84,8 +90,8 @@ export interface EditorState {
   indicatorSelectedFace: string | null;
   indicatorMode: IndicatorMode;
 
-  /** Gate order list */
-  checkpointOrder: string[];
+  /** Gate order list (strings for gates/cubes; structured pole passages) */
+  checkpointOrder: CheckpointOrderEntry[];
 
   /** Theme mode (light/dark/system) */
   theme: ThemeMode;
@@ -137,8 +143,15 @@ export interface EditorState {
   setIndicatorSelectedFace: (face: string | null) => void;
   setIndicatorMode: (mode: IndicatorMode) => void;
 
-  setCheckpointOrder: (order: string[]) => void;
+  setCheckpointOrder: (order: CheckpointOrderEntry[]) => void;
   addCheckpoint: (value: string) => void;
+  addPolePassageCheckpoint: (input: {
+    objectId: string;
+    entityName: string;
+    angleDeg: number;
+    globalRotationAtAdd: number;
+    side: "left" | "right";
+  }) => void;
   removeCheckpoint: (index: number) => void;
   moveCheckpoint: (index: number, delta: number) => void;
   reorderCheckpoint: (from: number, to: number) => void;
@@ -246,7 +259,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   setIndicatorSelectedFace: (face) => set({ indicatorSelectedFace: face }),
   setIndicatorMode: (mode) => set({ indicatorMode: mode }),
 
-  setCheckpointOrder: (order) => set({ checkpointOrder: order }),
+  setCheckpointOrder: (order) => set({ checkpointOrder: normalizeCheckpointOrder(order) }),
   addCheckpoint: (value) =>
     set((s) => {
       const trimmed = value.trim();
@@ -254,6 +267,18 @@ export const useEditorStore = create<EditorState>((set) => ({
         return s;
       }
       return { checkpointOrder: [...s.checkpointOrder, trimmed] };
+    }),
+  addPolePassageCheckpoint: (input) =>
+    set((s) => {
+      if (!input.objectId || !input.entityName.trim()) return s;
+      const entry = makePolePassageCheckpoint({
+        objectId: input.objectId,
+        entityName: input.entityName,
+        angleDeg: input.angleDeg,
+        globalRotationAtAdd: input.globalRotationAtAdd,
+        side: input.side,
+      });
+      return { checkpointOrder: [...s.checkpointOrder, entry] };
     }),
   removeCheckpoint: (index) =>
     set((s) => ({

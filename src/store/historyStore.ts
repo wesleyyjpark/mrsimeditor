@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { CheckpointOrderEntry } from "../lib/checkpointOrder";
 import { useEditorStore } from "./editorStore";
 
 /**
@@ -13,7 +14,7 @@ export interface SceneSnapshot {
   /** Editor counters/state we need to roundtrip */
   entityCounters: Record<string, number>;
   /** Gate-order snapshot at the time of the action */
-  checkpointOrder: string[];
+  checkpointOrder: CheckpointOrderEntry[];
   /** Per-placed-object metadata (entityName, attachments, ...). */
   placed: Array<{
     id: string;
@@ -26,6 +27,7 @@ export interface SceneSnapshot {
     attachedLevel?: number | null;
     attachedCubeTo?: string | null;
     attachedCubeCorner?: string | null;
+    sensingSide?: "left" | "right" | null;
   }>;
 }
 

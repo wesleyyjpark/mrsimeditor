@@ -1,13 +1,16 @@
 import { useEffect } from "react";
 import {
+  ChevronDown,
   Eye,
   EyeOff,
+  Grid,
   Maximize2,
   Minus,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
   Ruler,
+  Settings2,
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -23,6 +26,12 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Slider } from "@/components/ui/slider";
 import { Separator } from "@/components/ui/separator";
 import { Kbd } from "@/components/ui/kbd";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+  DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -48,6 +57,7 @@ export function CanvasArea({ canvasRef, wrapperRef }: CanvasAreaProps) {
   const toggleShowReference = useEditorStore((s) => s.toggleShowReferenceLayout);
   const snappingEnabled = useEditorStore((s) => s.snappingEnabled);
   const setSnappingEnabled = useEditorStore((s) => s.setSnappingEnabled);
+  const placedSummary = useEditorStore((s) => s.placedSummary);
   const rulerEnabled = useEditorStore((s) => s.rulerEnabled);
   const setRulerEnabled = useEditorStore((s) => s.setRulerEnabled);
   const sidebarsHidden = useEditorStore((s) => s.sidebarsHidden);
@@ -80,31 +90,69 @@ export function CanvasArea({ canvasRef, wrapperRef }: CanvasAreaProps) {
 
         <Separator orientation="vertical" className="h-6" />
 
-        <Tooltip delayDuration={200}>
+        <Tooltip delayDuration={300}>
           <TooltipTrigger asChild>
-            <div className="inline-flex h-8 items-center gap-2 rounded-md">
-              <Switch
-                id="editor-snap-enabled"
-                className="shrink-0"
-                checked={snappingEnabled}
-                onCheckedChange={setSnappingEnabled}
-              />
-              <Label htmlFor="editor-snap-enabled" className="text-xs cursor-pointer font-medium leading-none">
-                Snap to grid
-              </Label>
+            <div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1.5 px-2 text-xs"
+                    aria-label="Snap and grid alignment"
+                  >
+                    <Settings2 className="h-3.5 w-3.5 shrink-0" />
+                    Snap
+                    <ChevronDown className="h-3 w-3 shrink-0 opacity-50" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-56 p-2" collisionPadding={8}>
+                  <DropdownMenuLabel className="px-2 py-1.5 text-[11px] font-normal uppercase tracking-wide text-muted-foreground">
+                    Snapping
+                  </DropdownMenuLabel>
+                  <div
+                    className="flex cursor-default items-center justify-between gap-3 rounded-md px-2 py-2"
+                    onPointerDown={(e) => e.stopPropagation()}
+                  >
+
+                    <Label
+                      htmlFor="snap-menu-enabled"
+                      className="cursor-pointer text-xs font-normal leading-snug text-foreground"
+                    >
+                      Snap to grid{" "}
+                      <span className="text-muted-foreground">(keyboard S)</span>
+                    </Label>
+                    <Switch
+                      id="snap-menu-enabled"
+                      className="shrink-0"
+                      checked={snappingEnabled}
+                      onCheckedChange={setSnappingEnabled}
+                    />
+                  </div>
+                  <Separator className="my-2" />
+                  <div className="px-2 pb-1">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="h-8 w-full justify-start gap-2 px-2 text-xs"
+                      disabled={!controller || placedSummary.length === 0}
+                      onClick={() => controller?.snapAllToGrid()}
+                    >
+                      <Grid className="h-3.5 w-3.5" />
+                      Snap all to grid
+                    </Button>
+                    <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
+                      Moves every object to match grid spacing & rotation snap (Misc →
+                      Snapping). Works even if snap-to-grid above is off.
+                    </p>
+                  </div>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </TooltipTrigger>
-          <TooltipContent className="max-w-[260px]">
-            <div className="flex items-center justify-between gap-2 font-medium">
-              <span>Snap to grid</span>
-              <Kbd>S</Kbd>
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              When on, dragged or rotated objects clamp to the grid spacing and
-              rotation step set in <span className="font-medium">Misc → Snapping</span>
-              . Hold this off for free placement.
-            </p>
-          </TooltipContent>
+          
         </Tooltip>
 
         <Separator orientation="vertical" className="h-6" />
@@ -124,8 +172,6 @@ export function CanvasArea({ canvasRef, wrapperRef }: CanvasAreaProps) {
             Reference Layout <Kbd className="ml-2">R</Kbd>
           </TooltipContent>
         </Tooltip>
-
-        
 
         <Tooltip>
           <TooltipTrigger asChild>

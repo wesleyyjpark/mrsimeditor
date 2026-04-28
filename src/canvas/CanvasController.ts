@@ -368,19 +368,12 @@ export class CanvasController {
     this.settings = { ...prev, ...settings };
     if (settings.gridSizeMeters !== undefined && settings.gridSizeMeters !== prev.gridSizeMeters) {
       this.updateGridBackground();
-      this.resnapAll();
-    }
-    if (settings.rotationSnap !== undefined && settings.rotationSnap !== prev.rotationSnap) {
-      this.resnapAll();
     }
     if (
       settings.showReferenceLayout !== undefined &&
       settings.showReferenceLayout !== prev.showReferenceLayout
     ) {
       this.updateReferenceVisibility();
-    }
-    if (settings.snappingEnabled !== undefined && this.settings.snappingEnabled && !prev.snappingEnabled) {
-      this.resnapAll();
     }
     if (settings.rulerEnabled !== undefined && settings.rulerEnabled !== prev.rulerEnabled) {
       this.ruler.enabled = settings.rulerEnabled;
@@ -616,8 +609,12 @@ export class CanvasController {
 
   /* Snapping logic */
 
-  private snapObjectTransform(object: fabric.Object): void {
-    if (!this.settings.snappingEnabled || this.snapDisabledByShift) {
+  private snapObjectTransform(
+    object: fabric.Object,
+    opts?: { force?: boolean }
+  ): void {
+    const bypassToggle = opts?.force === true;
+    if (!bypassToggle && (!this.settings.snappingEnabled || this.snapDisabledByShift)) {
       object.setCoords();
       return;
     }
@@ -1220,7 +1217,7 @@ export class CanvasController {
     this.placeObjectAt(fabricObject, initialPosition);
     this.canvas.add(fabricObject);
     this.canvas.setActiveObject(fabricObject);
-    this.snapObjectTransform(fabricObject);
+    fabricObject.setCoords();
     const entityName = this.allocateEntityName(config.entityPrefix);
     const hasSensing = !!(config.sensingLineMeters && config.sensingLineMeters > 0);
     const metadata: PlacedObjectMeta = {
@@ -1260,7 +1257,7 @@ export class CanvasController {
         y: currentPos.y + this.settings.gridSizeMeters,
         angle: active.angle ?? 0,
       });
-      this.snapObjectTransform(cloned);
+      cloned.setCoords();
       const newMeta: PlacedObjectMeta = {
         id: createUniqueId(),
         config: meta.config,
@@ -1761,17 +1758,17 @@ export class CanvasController {
     }
   }
 
-  private resnapAll(): void {
-    if (!this.settings.snappingEnabled) return;
+  /** Snap every placed object to the current grid / rotation snap (explicit toolbar action). */
+  snapAllToGrid(): void {
     this.placedObjects.forEach((entry) => {
       if (
         entry.config.id === "padded-pole" &&
         (entry.attachedTo || entry.attachedCubeTo)
       ) {
         this.updateAttachedPolePosition(entry);
-        this.snapObjectTransform(entry.fabricObject);
+        this.snapObjectTransform(entry.fabricObject, { force: true });
       } else {
-        this.snapObjectTransform(entry.fabricObject);
+        this.snapObjectTransform(entry.fabricObject, { force: true });
       }
       this.updateObjectMetadata(entry.fabricObject);
       entry.fabricObject.setCoords();
@@ -2164,6 +2161,9 @@ export class CanvasController {
       const entity = transform.querySelector(":scope > Entity");
       if (!entity) continue;
 
+      /** Skip the wrapper <Entity name="Track"> and make sure its not placeable i.e spawning random crap */
+      if (entity.getAttribute("name") === "Track") continue;
+
       let meta: Record<string, unknown> | null = null;
       let prevNode = transform.previousSibling;
       while (
@@ -2243,15 +2243,6 @@ export class CanvasController {
         }
       }
 
-      if (
-        entity.getAttribute("name") === "Track" &&
-        !typeId &&
-        !entity.querySelector("Instance") &&
-        !entity.querySelector("Include")
-      ) {
-        continue;
-      }
-
       if (!typeConfig) {
         console.warn("Skipping unknown object in import:", entity.getAttribute("name"));
         continue;
@@ -2318,7 +2309,6 @@ export class CanvasController {
       }
     });
 
-    this.resnapAll();
     this.canvas.requestRenderAll();
     this.callbacks.onSceneChanged();
     return checkpointOrder;
@@ -3003,7 +2993,7 @@ export class CanvasController {
           y: currentPos.y + this.settings.gridSizeMeters,
           angle: src.angle ?? 0,
         });
-        this.snapObjectTransform(cloned);
+        cloned.setCoords();
         const newMeta: PlacedObjectMeta = {
           id: createUniqueId(),
           config: meta.config,

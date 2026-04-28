@@ -5,15 +5,19 @@ import {
   OBJECT_CATALOG,
   OBJECT_LOOKUP,
   REFERENCE_LAYOUT,
+  champs25ColorFromMacroName,
+  macroNameForPlacedExport,
   getGateStackCount,
   getGateStackSpacing,
   getPassageTarget,
   isCubeConfig,
   isGateConfig,
+  isHurdleConfig,
   isStackableGateConfig,
-  normalizeFlagTypeId,
+  normalizeCatalogTypeId,
   resolveMainIncludeFile,
 } from "../data/objects";
+import type { Champs25GateColor } from "../data/objects";
 import { ICON_BASELINE_OFFSETS } from "../data/icons";
 import type { ObjectConfig, PlacedObjectMeta, Position } from "../types";
 import {
@@ -102,6 +106,7 @@ export interface SerializedPlaced {
   attachedCubeCorner?: string | null;
   sensingSide?: "left" | "right" | null;
   sensingFacing?: "front" | "back" | null;
+  champsGateColor?: Champs25GateColor | null;
 }
 
 export interface SceneSnapshotShape {
@@ -245,6 +250,7 @@ export class CanvasController {
       attachedCubeCorner: m.attachedCubeCorner ?? null,
       sensingSide: m.sensingSide ?? null,
       sensingFacing: m.sensingFacing ?? null,
+      champsGateColor: m.champsGateColor,
     }));
     return {
       canvas: json,
@@ -278,7 +284,7 @@ export class CanvasController {
               data?: { id?: string; typeId?: string };
             }).data;
             if (!data?.id || !data.typeId) continue;
-            const normalizedId = normalizeFlagTypeId(data.typeId);
+            const normalizedId = normalizeCatalogTypeId(data.typeId);
             const config = OBJECT_LOOKUP[normalizedId.typeId];
             if (!config) continue;
             if (normalizedId.typeId !== data.typeId) {
@@ -316,6 +322,12 @@ export class CanvasController {
                     ? "back"
                     : "front"
                   : null,
+              champsGateColor:
+                config.id === "champs-25-gate"
+                  ? (stored?.champsGateColor ??
+                    normalizedId.legacyChampsGateColor ??
+                    "red")
+                  : undefined,
             };
             this.applyVisualDefaults(obj, config);
             this.placedObjects.push(meta);
@@ -604,38 +616,6 @@ export class CanvasController {
 
   /* Snapping logic */
 
-  private checkGateSpacing(
-    object: fabric.Object,
-    targetXMeters: number,
-    targetYMeters: number
-  ): { adjustX: number; adjustY: number } {
-    const config = this.getConfigForObject(object);
-    if (!config) return { adjustX: 0, adjustY: 0 };
-    if (!isGateConfig(config)) return { adjustX: 0, adjustY: 0 };
-
-    const gateWidth = config.width || 2.1;
-    const minSpacing = gateWidth;
-    let adjustX = 0;
-    let adjustY = 0;
-
-    this.placedObjects.forEach((entry) => {
-      if (entry.fabricObject === object) return;
-      if (!isGateConfig(entry.config)) return;
-      const otherPos = this.getObjectPositionMeters(entry.fabricObject);
-      const dx = targetXMeters - otherPos.x;
-      const dy = targetYMeters - otherPos.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-      if (distance > 0 && distance < minSpacing) {
-        const angle = Math.atan2(dy, dx);
-        const neededSeparation = minSpacing - distance;
-        adjustX += Math.cos(angle) * neededSeparation;
-        adjustY += Math.sin(angle) * neededSeparation;
-      }
-    });
-
-    return { adjustX, adjustY };
-  }
-
   private snapObjectTransform(object: fabric.Object): void {
     if (!this.settings.snappingEnabled || this.snapDisabledByShift) {
       object.setCoords();
@@ -661,13 +641,8 @@ export class CanvasController {
     const currentY = origin.y - baseTop;
     const gridX = Math.round(currentX / snapGridPx);
     const gridY = Math.round(currentY / snapGridPx);
-    let finalSnappedX = gridX * snapGridPx;
-    let finalSnappedY = gridY * snapGridPx;
-    const snappedXMeters = finalSnappedX / PIXELS_PER_METER;
-    const snappedYMeters = finalSnappedY / PIXELS_PER_METER;
-    const spacingAdjust = this.checkGateSpacing(object, snappedXMeters, snappedYMeters);
-    finalSnappedX += spacingAdjust.adjustX * PIXELS_PER_METER;
-    finalSnappedY += spacingAdjust.adjustY * PIXELS_PER_METER;
+    const finalSnappedX = gridX * snapGridPx;
+    const finalSnappedY = gridY * snapGridPx;
     const snappedLeft = origin.x + finalSnappedX;
     const snappedBaseTop = origin.y - finalSnappedY;
     const snappedTop = snappedBaseTop + anchorOffset;
@@ -959,9 +934,12 @@ export class CanvasController {
       }
 
       if (renderStyle === "outline") {
+        const minThinPx = 6;
+        const outlineW = footprintWidthPx;
+        const outlineH = Math.max(footprintHeightPx, minThinPx);
         const rect = new fabric.Rect({
-          width: footprintWidthPx,
-          height: footprintHeightPx,
+          width: outlineW,
+          height: outlineH,
           fill: "transparent",
           stroke: baseColor,
           strokeWidth: 2,
@@ -973,8 +951,8 @@ export class CanvasController {
         });
         const parts: fabric.Object[] = [rect];
         if (showForward) {
-          const arrowSize = Math.max(8, Math.min(footprintWidthPx * 0.12, 24));
-          parts.push(this.makeFrontMarkerInward(baseColor, arrowSize, footprintHeightPx / 2));
+          const arrowSize = Math.max(8, Math.min(outlineW * 0.12, 24));
+          parts.push(this.makeFrontMarkerInward(baseColor, arrowSize, outlineH / 2));
         }
         return new fabric.Group(parts, {
           originX: "center",
@@ -1255,6 +1233,7 @@ export class CanvasController {
       sensingSide: hasSensing ? this.initialSensingSideForConfig(config) : null,
       sensingFacing:
         hasSensing && getPassageTarget(config) === "flag" ? "front" : null,
+      champsGateColor: config.id === "champs-25-gate" ? "red" : undefined,
     };
     this.placedObjects.push(metadata);
     this.metaByObjectId.set(fabricObject, metadata);
@@ -1291,6 +1270,7 @@ export class CanvasController {
         stackCount: meta.stackCount,
         sensingSide: meta.sensingSide ?? null,
         sensingFacing: meta.sensingFacing ?? null,
+        champsGateColor: meta.champsGateColor,
       };
       this.applyVisualDefaults(cloned, meta.config);
       this.placedObjects.push(newMeta);
@@ -1369,6 +1349,15 @@ export class CanvasController {
     });
     this.callbacks.onSelectionChanged(this.activeMeta);
     this.canvas.requestRenderAll();
+    this.callbacks.onSceneChanged();
+  }
+
+  setActiveChampsGateColor(value: Champs25GateColor): void {
+    if (!this.activeMeta || this.activeMeta.config.id !== "champs-25-gate") return;
+    this.activeMeta.champsGateColor = value;
+    const found = this.placedObjects.find((e) => e.id === this.activeMeta?.id);
+    if (found) found.champsGateColor = value;
+    this.callbacks.onSelectionChanged(this.activeMeta);
     this.callbacks.onSceneChanged();
   }
 
@@ -2215,11 +2204,13 @@ export class CanvasController {
 
       let typeConfig: ObjectConfig | null = null;
       let importFlagSensing: "left" | "right" | null = null;
+      let importChampsColor: Champs25GateColor | undefined;
       const typeId = meta?.typeId as string | undefined;
       if (typeId) {
-        const n = normalizeFlagTypeId(typeId);
+        const n = normalizeCatalogTypeId(typeId);
         typeConfig = OBJECT_LOOKUP[n.typeId] || null;
         if (n.legacySensingSide) importFlagSensing = n.legacySensingSide;
+        if (n.legacyChampsGateColor) importChampsColor = n.legacyChampsGateColor;
       }
 
       if (!typeConfig) {
@@ -2227,10 +2218,17 @@ export class CanvasController {
         const include = entity.querySelector("Include");
         const macroName = instance?.getAttribute("macro");
         const includeFile = include?.getAttribute("file");
-        typeConfig =
-          OBJECT_CATALOG.find((entry) => entry.macroName === macroName) ||
-          OBJECT_CATALOG.find((entry) => entry.includeFile === includeFile) ||
-          null;
+        const chFromInstance = macroName ? champs25ColorFromMacroName(macroName) : null;
+        if (chFromInstance) {
+          typeConfig = OBJECT_LOOKUP["champs-25-gate"];
+          importChampsColor = chFromInstance;
+        }
+        if (!typeConfig) {
+          typeConfig =
+            OBJECT_CATALOG.find((entry) => entry.macroName === macroName) ||
+            OBJECT_CATALOG.find((entry) => entry.includeFile === includeFile) ||
+            null;
+        }
         if (!typeConfig && includeFile) {
           if (includeFile.includes("FlagPassLeft")) {
             typeConfig = OBJECT_LOOKUP["flag"];
@@ -2238,6 +2236,9 @@ export class CanvasController {
           } else if (includeFile.includes("FlagPassRight")) {
             typeConfig = OBJECT_LOOKUP["flag"];
             importFlagSensing = "right";
+          } else if (includeFile.includes("Gates/Champs25Gate.xml")) {
+            typeConfig = OBJECT_LOOKUP["champs-25-gate"];
+            importChampsColor = importChampsColor ?? "red";
           }
         }
       }
@@ -2267,6 +2268,7 @@ export class CanvasController {
         altitude,
       };
 
+      const metaChamps = meta?.champsGateColor as Champs25GateColor | undefined;
       const importedMeta = await this.addObjectFromImport(typeConfig, position, {
         id: meta?.id as string | undefined,
         entityName,
@@ -2279,6 +2281,10 @@ export class CanvasController {
         sensingSide: meta?.sensingSide as "left" | "right" | null,
         sensingFacing: meta?.sensingFacing as "front" | "back" | null,
         importFlagSensing,
+        champsGateColor:
+          typeConfig.id === "champs-25-gate"
+            ? metaChamps ?? importChampsColor ?? "red"
+            : undefined,
       });
 
       const metaId = meta?.id as string | undefined;
@@ -2363,6 +2369,7 @@ export class CanvasController {
       sensingFacing?: "front" | "back" | null;
       /** From old type id or Include path when importing unified `flag`. */
       importFlagSensing?: "left" | "right" | null;
+      champsGateColor?: Champs25GateColor;
     }
   ): Promise<PlacedObjectMeta> {
     const fabricObject = await this.createFabricObject(config);
@@ -2406,6 +2413,10 @@ export class CanvasController {
             ? meta.sensingFacing
             : "front"
           : null,
+      champsGateColor:
+        config.id === "champs-25-gate"
+          ? meta.champsGateColor ?? "red"
+          : undefined,
     };
     this.updateEntityCounterFromName(metadata.entityName);
     this.placedObjects.push(metadata);
@@ -2568,37 +2579,6 @@ export class CanvasController {
     lines.push("      </Transform>");
     if (this.placedObjects.length > 0) lines.push("");
 
-    const gatePositions: { x: number; y: number; entry: PlacedObjectMeta }[] = [];
-    const GATE_WIDTH = 2.1;
-
-    this.placedObjects.forEach((entry) => {
-      const config = entry.config;
-      const isGate = isGateConfig(config);
-      if (!isGate) return;
-      const pos = this.getObjectPositionMeters(entry.fabricObject);
-      const forward = pos.y;
-      const lateral = pos.x;
-      const rotatedForward = forward * cosR - lateral * sinR;
-      const rotatedLateral = forward * sinR + lateral * cosR;
-      let finalX = rotatedForward + offsetForward;
-      let finalY = -rotatedLateral + offsetLateral;
-      for (const existingGate of gatePositions) {
-        const dx = finalX - existingGate.x;
-        const dy = finalY - existingGate.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        if (distance > 0 && distance < GATE_WIDTH) {
-          const angle = Math.atan2(dy, dx);
-          const neededSeparation = GATE_WIDTH - distance;
-          finalX += Math.cos(angle) * neededSeparation;
-          finalY += Math.sin(angle) * neededSeparation;
-        }
-      }
-      gatePositions.push({ x: finalX, y: finalY, entry });
-    });
-
-    const gatePositionsMap = new Map<PlacedObjectMeta, { x: number; y: number }>();
-    gatePositions.forEach(({ entry, x, y }) => gatePositionsMap.set(entry, { x, y }));
-
     this.placedObjects.forEach((entry) => {
       const object = entry.fabricObject;
       const pos = this.getObjectPositionMeters(object);
@@ -2606,9 +2586,8 @@ export class CanvasController {
       const lateral = pos.x;
       const rotatedForward = forward * cosR - lateral * sinR;
       const rotatedLateral = forward * sinR + lateral * cosR;
-      const adjustedPos = gatePositionsMap.get(entry);
-      const finalX = adjustedPos ? adjustedPos.x : rotatedForward + offsetForward;
-      const finalY = adjustedPos ? adjustedPos.y : -rotatedLateral + offsetLateral;
+      const finalX = rotatedForward + offsetForward;
+      const finalY = -rotatedLateral + offsetLateral;
       const finalAngle = normalizeAngle((object.angle ?? 0) + globalRotationDegrees + 90);
       const altitude = entry.altitude || 0;
       const editorMeta = {
@@ -2623,6 +2602,9 @@ export class CanvasController {
         stackCount: entry.stackCount ?? null,
         sensingSide: entry.sensingSide ?? null,
         sensingFacing: getPassageTarget(entry.config) === "flag" ? entry.sensingFacing ?? null : null,
+        ...(entry.config.id === "champs-25-gate"
+          ? { champsGateColor: entry.champsGateColor ?? "red" }
+          : {}),
       };
 
       const passageSensors = this.collectPassageSensors(entry, checkpointOrder);
@@ -2660,7 +2642,10 @@ export class CanvasController {
           );
           lines.push(`        <Entity name="${stackEntityName}">`);
           if (entry.config.placement === "macro") {
-            lines.push(`          <Instance macro="${entry.config.macroName}"/>`);
+            const m = macroNameForPlacedExport(entry);
+            if (m) {
+              lines.push(`          <Instance macro="${m}"/>`);
+            }
           } else {
             lines.push(`          <Include file="${mainIncludeFile}"/>`);
           }
@@ -2714,7 +2699,10 @@ export class CanvasController {
         );
         lines.push(`        <Entity name="${entry.entityName}">`);
         if (entry.config.placement === "macro") {
-          lines.push(`          <Instance macro="${entry.config.macroName}"/>`);
+          const m = macroNameForPlacedExport(entry);
+          if (m) {
+            lines.push(`          <Instance macro="${m}"/>`);
+          }
         } else {
           lines.push(`          <Include file="${mainIncludeFile}"/>`);
         }
@@ -2759,7 +2747,9 @@ export class CanvasController {
   /* Helpers exposed to React components */
 
   getGatesForAttachment(): PlacedObjectMeta[] {
-    return this.placedObjects.filter((entry) => isGateConfig(entry.config));
+    return this.placedObjects.filter(
+      (entry) => isGateConfig(entry.config) && !isHurdleConfig(entry.config)
+    );
   }
 
   getCubesForAttachment(): PlacedObjectMeta[] {
@@ -3021,6 +3011,9 @@ export class CanvasController {
           entityName: this.allocateEntityName(meta.config.entityPrefix),
           altitude: meta.altitude,
           stackCount: meta.stackCount,
+          sensingSide: meta.sensingSide ?? null,
+          sensingFacing: meta.sensingFacing ?? null,
+          champsGateColor: meta.champsGateColor,
         };
         this.applyVisualDefaults(cloned, meta.config);
         this.placedObjects.push(newMeta);

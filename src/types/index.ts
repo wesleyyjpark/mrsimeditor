@@ -92,6 +92,10 @@ export interface PlacedObjectMeta {
    * approach when adding legacy-style checkpoint strings (and default for new adds).
    */
   sensingFacing?: "front" | "back" | null;
+  /**
+   * For champs 25 gate, determines the macro to emit on export.
+   */
+  champsGateColor?: "red" | "green" | "blue" | "yellow" | "white" | null;
   position?: { x: number; y: number };
   angle?: number;
 }

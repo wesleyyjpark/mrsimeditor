@@ -8,6 +8,51 @@ import {
   QUAD_LADDER_ICON,
 } from "./icons";
 
+/** Plan-view gate strip: same proportions as 5x5 (visual 2.4×2.1 m on 2.1×0.2 m footprint). */
+export const GATE_PLAN_VISUAL_H_M = 2.1;
+export const gatePlanVisualWidthM = (footprintWidthM: number) => footprintWidthM * (2.4 / 2.1);
+
+export type Champs25GateColor = "red" | "green" | "blue" | "yellow" | "white";
+
+const CHAMPS25_COLOR_TO_MACRO: Record<Champs25GateColor, string> = {
+  red: "Champs25GateRed",
+  green: "Champs25GateGreen",
+  blue: "Champs25GateBlue",
+  yellow: "Champs25GateYellow",
+  white: "Champs25GateWhite",
+};
+
+export function champs25MacroNameForColor(color: Champs25GateColor | null | undefined): string {
+  const c = color && CHAMPS25_COLOR_TO_MACRO[color] ? color : "red";
+  return CHAMPS25_COLOR_TO_MACRO[c];
+}
+
+export function champs25ColorFromMacroName(macro: string): Champs25GateColor | null {
+  const e = Object.entries(CHAMPS25_COLOR_TO_MACRO).find(([, m]) => m === macro);
+  return e ? (e[0] as Champs25GateColor) : null;
+}
+
+/**
+ * Which Instance macro to emit for a placed object (Champs25 uses meta, not `config.macroName`).
+ */
+export function macroNameForPlacedExport(entry: {
+  config: ObjectConfig;
+  champsGateColor?: Champs25GateColor | null;
+}): string | undefined {
+  if (entry.config.id === "champs-25-gate") {
+    return champs25MacroNameForColor(entry.champsGateColor);
+  }
+  return entry.config.macroName;
+}
+
+/**
+ * Real sim span along the gate line (m). Editor may use a smaller
+ * `footprintWidth` for drawing; `width` holds the true course size.
+ */
+export function gateLogicalSpanMeters(config: ObjectConfig): number {
+  return config.width ?? config.footprintWidth ?? 2.1;
+}
+
 export const OBJECT_CATALOG: ObjectConfig[] = [
   {
     id: "start-finish-5x5",
@@ -24,10 +69,9 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     altitude: 0,
     color: "#ff7043",
     placement: "macro",
-    icon: GATE_ICON,
     renderStyle: "outline",
     paletteCategories: ["standard"],
-    previewImage: "",
+    previewImage: "assets/gate-image.png",
   },
   {
     id: "gate-5x5",
@@ -50,38 +94,19 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     previewImage: "assets/gate-image.png",
   },
   {
-    id: "gate-7x7",
-    label: "7x7 Gate",
-    entityPrefix: "trkGate",
-    includeFile: "/Data/Simulations/Multirotor/7x7Gate.xml",
-    width: 7,
-    height: 7,
-    footprintWidth: 2.1,
-    footprintHeight: 0.2,
-    visualWidth: 2.1,
-    visualHeight: 2.1,
-    altitude: 0,
-    color: "#26a69a",
-    placement: "include",
-    icon: GATE_ICON,
-    renderStyle: "outline",
-    paletteCategories: ["champs"],
-    previewImage: "",
-  },
-  {
     id: "champs-25-gate",
-    label: "Champs25Gate",
+    label: "Champs25 Gate",
     entityPrefix: "trkGate",
-    includeFile: "/Data/Simulations/Multirotor/Gates/Champs25Gate.xml",
     width: 25,
     height: 25,
-    footprintWidth: 25,
-    footprintHeight: 0.2,
-    visualWidth: 25,
-    visualHeight: 25,
+    /** Editor canvas only — same as 5×5 gate bar; `width` is the real 25m span for export. */
+    footprintWidth: 2.5,
+    footprintHeight: 0.4,
+    visualWidth: 2.4,
+    visualHeight: 2.1,
     altitude: 0,
     color: "#1e88e5",
-    placement: "include",
+    placement: "macro",
     icon: GATE_ICON,
     renderStyle: "outline",
     paletteCategories: ["champs"],
@@ -93,14 +118,15 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     includeFile: "/Data/Simulations/Multirotor/Gates/Champs25Pole.xml",
     width: 2,
     height: 4,
-    footprintWidth: 0.2,
-    footprintHeight: 0.2,
+    footprintWidth: 2,
+    footprintHeight: 2,
     altitude: 0,
     color: "#64b5f6",
     placement: "include",
     icon: FLAG_ICON,
     renderStyle: "point",
     sensingLineMeters: 1.5,
+    anchorOffsetMeters: 0,
     paletteCategories: ["champs"],
     showDirectionArrow: false,
   },
@@ -111,10 +137,10 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     includeFile: "/Data/Simulations/Multirotor/7x16Hurdle.xml",
     width: 7,
     height: 16,
-    footprintWidth: 7,
+    footprintWidth: 16,
     footprintHeight: 0.2,
-    visualWidth: 7,
-    visualHeight: 16,
+    visualWidth: gatePlanVisualWidthM(16),
+    visualHeight: GATE_PLAN_VISUAL_H_M,
     altitude: 0,
     color: "#ffb74d",
     placement: "include",
@@ -130,10 +156,10 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     includeFile: "/Data/Simulations/Multirotor/5x10Hurdle.xml",
     width: 5,
     height: 10,
-    footprintWidth: 5,
+    footprintWidth: 10,
     footprintHeight: 0.2,
-    visualWidth: 5,
-    visualHeight: 10,
+    visualWidth: gatePlanVisualWidthM(10),
+    visualHeight: GATE_PLAN_VISUAL_H_M,
     altitude: 0,
     color: "#ffcc80",
     placement: "include",
@@ -149,10 +175,10 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     includeFile: "/Data/Simulations/Multirotor/4x7Hurdle.xml",
     width: 4,
     height: 7,
-    footprintWidth: 4,
+    footprintWidth: 7,
     footprintHeight: 0.2,
-    visualWidth: 4,
-    visualHeight: 7,
+    visualWidth: gatePlanVisualWidthM(7),
+    visualHeight: GATE_PLAN_VISUAL_H_M,
     altitude: 0,
     color: "#ffe0b2",
     placement: "include",
@@ -163,36 +189,40 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
   },
   {
     id: "gate-7x6",
-    label: "7x6Gate",
+    label: "7x6 Gate",
     entityPrefix: "trkGate",
+    macroName: "Centered7x6Gate",
+    /** For import layouts that omit Instance/macro matching. Same model as centered 5×5 macros. */
     includeFile: "/Data/Simulations/Multirotor/7x6Gate.xml",
     width: 7,
     height: 6,
+    /** Plan footprint matches 7 m course span (avoid a thin strip vs other gates). */
     footprintWidth: 7,
     footprintHeight: 0.2,
-    visualWidth: 7,
-    visualHeight: 6,
+    visualWidth: gatePlanVisualWidthM(7),
+    visualHeight: GATE_PLAN_VISUAL_H_M,
     altitude: 0,
     color: "#26a69a",
-    placement: "include",
+    placement: "macro",
     icon: GATE_ICON,
     renderStyle: "outline",
     paletteCategories: ["champs"],
   },
   {
     id: "start-finish-7x6",
-    label: "7x6StartFinishGate",
+    label: "7x6 Start/Finish Gate",
     entityPrefix: "trkGate",
+    macroName: "Centered7x6StartFinishGate",
     includeFile: "/Data/Simulations/Multirotor/7x6StartFinishGate.xml",
     width: 7,
     height: 6,
     footprintWidth: 7,
     footprintHeight: 0.2,
-    visualWidth: 7,
-    visualHeight: 6,
+    visualWidth: gatePlanVisualWidthM(7),
+    visualHeight: GATE_PLAN_VISUAL_H_M,
     altitude: 0,
     color: "#42a5f5",
-    placement: "include",
+    placement: "macro",
     icon: GATE_ICON,
     renderStyle: "outline",
     paletteCategories: ["champs"],
@@ -206,6 +236,8 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     height: 2.1,
     footprintWidth: 2.1,
     footprintHeight: 2.1,
+    visualWidth: gatePlanVisualWidthM(2.1),
+    visualHeight: gatePlanVisualWidthM(2.1),
     altitude: 0,
     color: "#26c6da",
     placement: "include",
@@ -222,6 +254,8 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     height: 2.1,
     footprintWidth: 2.1,
     footprintHeight: 2.1,
+    visualWidth: gatePlanVisualWidthM(2.1),
+    visualHeight: gatePlanVisualWidthM(2.1),
     altitude: 0,
     color: "#4dd0e1",
     placement: "include",
@@ -238,8 +272,8 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     height: 7,
     footprintWidth: 7,
     footprintHeight: 0.2,
-    visualWidth: 7,
-    visualHeight: 7,
+    visualWidth: gatePlanVisualWidthM(7),
+    visualHeight: GATE_PLAN_VISUAL_H_M,
     altitude: 0,
     color: "#80deea",
     placement: "include",
@@ -256,6 +290,8 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     height: 2.1,
     footprintWidth: 2.1,
     footprintHeight: 2.1,
+    visualWidth: gatePlanVisualWidthM(2.1),
+    visualHeight: gatePlanVisualWidthM(2.1),
     altitude: 0,
     color: "#8d6e63",
     placement: "include",
@@ -272,8 +308,8 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     height: 7,
     footprintWidth: 7,
     footprintHeight: 0.2,
-    visualWidth: 7,
-    visualHeight: 7,
+    visualWidth: gatePlanVisualWidthM(7),
+    visualHeight: GATE_PLAN_VISUAL_H_M,
     altitude: 0,
     color: "#26a69a",
     placement: "include",
@@ -477,12 +513,28 @@ if (FLAG_UNIFIED) {
   OBJECT_LOOKUP["flag-pass-right"] = FLAG_UNIFIED;
 }
 
-const GATE_TYPE_IDS = new Set(["gate-5x5", "gate-7x7", "start-finish-5x5"]);
+const GATE_TYPE_IDS = new Set([
+  "gate-5x5",
+  "start-finish-5x5",
+  "gate-7x6",
+  "start-finish-7x6",
+  "champs-25-gate",
+  "dive-gate-7x7",
+  "climb-gate-7x7",
+  "hurdle-7x16",
+  "hurdle-5x10",
+  "hurdle-4x7",
+]);
+const HURDLE_TYPE_IDS = new Set(["hurdle-7x16", "hurdle-5x10", "hurdle-4x7"]);
 const CUBE_TYPE_IDS = new Set(["pipe-cube", "pipe-double-cube"]);
 const STACKABLE_GATE_TYPE_IDS = new Set(["gate-5x5", "start-finish-5x5"]);
 
 export function isGateConfig(config: ObjectConfig | null | undefined): boolean {
   return Boolean(config && GATE_TYPE_IDS.has(config.id));
+}
+
+export function isHurdleConfig(config: ObjectConfig | null | undefined): boolean {
+  return Boolean(config && HURDLE_TYPE_IDS.has(config.id));
 }
 
 export function isCubeConfig(config: ObjectConfig | null | undefined): boolean {
@@ -532,6 +584,24 @@ export function normalizeFlagTypeId(typeId: string): {
   if (typeId === "flag-pass-left") return { typeId: "flag", legacySensingSide: "left" };
   if (typeId === "flag-pass-right") return { typeId: "flag", legacySensingSide: "right" };
   return { typeId };
+}
+
+/**
+ * Maps retired catalog ids and unifies with `normalizeFlagTypeId` for rehydration.
+ */
+export function normalizeCatalogTypeId(typeId: string): {
+  typeId: string;
+  legacySensingSide?: "left" | "right";
+  legacyChampsGateColor?: Champs25GateColor;
+} {
+  const split = typeId.match(/^champs-25-gate-(red|green|blue|yellow|white)$/);
+  if (split) {
+    return { typeId: "champs-25-gate", legacyChampsGateColor: split[1] as Champs25GateColor };
+  }
+  if (typeId === "gate-7x7") {
+    return { typeId: "gate-7x6" };
+  }
+  return normalizeFlagTypeId(typeId);
 }
 
 export function getPassageTarget(config: ObjectConfig | null | undefined): "pole" | "flag" {
@@ -600,6 +670,16 @@ export const CENTERED_GATE_MACROS = [
   '  <Macro name="Centered5x5Gate">',
   '    <Transform x="-1.05">',
   '      <Include file="/Data/Simulations/Multirotor/5x5Gate.xml"/>',
+  "    </Transform>",
+  "  </Macro>",
+  '  <Macro name="Centered7x6Gate">',
+  '    <Transform x="-3.5">',
+  '      <Include file="/Data/Simulations/Multirotor/7x6Gate.xml"/>',
+  "    </Transform>",
+  "  </Macro>",
+  '  <Macro name="Centered7x6StartFinishGate">',
+  '    <Transform x="-3.5">',
+  '      <Include file="/Data/Simulations/Multirotor/7x6StartFinishGate.xml"/>',
   "    </Transform>",
   "  </Macro>",
 ];

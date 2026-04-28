@@ -35,6 +35,7 @@ function metaToSnapshot(meta: PlacedObjectMeta | null): SelectedObjectSnapshot |
     stackCount: meta.stackCount,
     sensingSide: meta.sensingSide ?? null,
     sensingFacing: meta.sensingFacing ?? null,
+    champsGateColor: meta.champsGateColor ?? null,
   };
 }
 

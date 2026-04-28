@@ -46,6 +46,8 @@ export interface SelectedObjectSnapshot {
   stackCount?: number;
   sensingSide?: "left" | "right" | null;
   sensingFacing?: "front" | "back" | null;
+  /** For `champs-25-gate` only. */
+  champsGateColor?: "red" | "green" | "blue" | "yellow" | "white" | null;
 }
 
 export interface PlacedSummary {

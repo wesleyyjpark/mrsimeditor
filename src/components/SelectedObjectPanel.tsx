@@ -201,12 +201,39 @@ export function SelectedObjectPanel() {
                 </div>
               ) : null}
 
+              {selected.config.id === "champs-25-gate" ? (
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Champs25 gate color</Label>
+                  <Select
+                    value={selected.champsGateColor ?? "red"}
+                    onValueChange={(v) =>
+                      controller?.setActiveChampsGateColor(
+                        v as "red" | "green" | "blue" | "yellow" | "white"
+                      )
+                    }
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="red">Red</SelectItem>
+                      <SelectItem value="green">Green</SelectItem>
+                      <SelectItem value="blue">Blue</SelectItem>
+                      <SelectItem value="yellow">Yellow</SelectItem>
+                      <SelectItem value="white">White</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : null}
+
               <ReadonlyField
                 label="Include"
                 value={
-                  selected.config.placement === "macro"
-                    ? `Macro: ${selected.config.macroName}`
-                    : (selected.config.includeFile ?? "—")
+                  selected.config.id === "champs-25-gate"
+                    ? "Gates/Champs25Gate.xml (macro by color)"
+                    : selected.config.placement === "macro"
+                      ? `Macro: ${selected.config.macroName ?? "—"}`
+                      : (selected.config.includeFile ?? "—")
                 }
                 icon={<Hash className="h-3 w-3" />}
               />

@@ -29,6 +29,7 @@ export interface SceneSnapshot {
     attachedCubeCorner?: string | null;
     sensingSide?: "left" | "right" | null;
     sensingFacing?: "front" | "back" | null;
+    champsGateColor?: "red" | "green" | "blue" | "yellow" | "white" | null;
   }>;
 }
 

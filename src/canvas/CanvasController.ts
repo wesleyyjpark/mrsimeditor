@@ -2439,6 +2439,15 @@ export class CanvasController {
     const gNow = this.settings.globalRotation || 0;
     const target = getPassageTarget(entry.config);
 
+    /** Reimported checkpoint list uses full sub-entity ids lik pole_pass_<uuid> or _pass_legacy_n to fix import issue */
+    const roundTripPassNames = (): string[] => {
+      const prefix = `${entry.entityName}_pass_`;
+      return checkpointOrder
+        .filter((c): c is string => typeof c === "string")
+        .map((c) => c.trim())
+        .filter((c) => c.startsWith(prefix) && c.length > prefix.length);
+    };
+
     if (target === "flag") {
       const structured = checkpointOrder.filter(
         (c): c is FlagPassageCheckpoint =>
@@ -2459,6 +2468,47 @@ export class CanvasController {
           };
         });
       }
+    } else {
+      const structuredPole = checkpointOrder.filter(
+        (c): c is PolePassageCheckpoint => isPolePassageCheckpoint(c) && c.objectId === entry.id
+      );
+      if (structuredPole.length > 0) {
+        return structuredPole.map((p) => {
+          const gAdd = p.globalRotationAtAdd !== undefined ? p.globalRotationAtAdd : gNow;
+          const relativeAngleDeg = normalizeEditorAngle(
+            p.angleDeg - fabricAngle + (gAdd - gNow)
+          );
+          return {
+            subEntityName: polePassageExportName(p),
+            relativeAngleDeg,
+            side: p.side,
+            zMeters: POLE_SENSOR_Z_METERS,
+            facing: "front" as const,
+          };
+        });
+      }
+    }
+
+    const roundTripNames = roundTripPassNames();
+    if (roundTripNames.length > 0) {
+      const side: "left" | "right" = entry.sensingSide === "left" ? "left" : "right";
+      const zMeters = target === "flag" ? FLAG_SENSOR_Z_METERS : POLE_SENSOR_Z_METERS;
+      const facing: "front" | "back" =
+        target === "flag"
+          ? entry.sensingFacing === "back"
+            ? "back"
+            : "front"
+          : "front";
+      return roundTripNames.map((subEntityName) => ({
+        subEntityName,
+        relativeAngleDeg: 0,
+        side,
+        zMeters,
+        facing,
+      }));
+    }
+
+    if (target === "flag") {
       const legacyCount = checkpointOrder.filter(
         (c) => typeof c === "string" && c.trim() === entry.entityName
       ).length;
@@ -2474,33 +2524,15 @@ export class CanvasController {
       }));
     }
 
-    const structured = checkpointOrder.filter(
-      (c): c is PolePassageCheckpoint => isPolePassageCheckpoint(c) && c.objectId === entry.id
-    );
-    if (structured.length > 0) {
-      return structured.map((p) => {
-        const gAdd = p.globalRotationAtAdd !== undefined ? p.globalRotationAtAdd : gNow;
-        const relativeAngleDeg = normalizeEditorAngle(
-          p.angleDeg - fabricAngle + (gAdd - gNow)
-        );
-        return {
-          subEntityName: polePassageExportName(p),
-          relativeAngleDeg,
-          side: p.side,
-          zMeters: POLE_SENSOR_Z_METERS,
-          facing: "front" as const,
-        };
-      });
-    }
-    const legacyCount = checkpointOrder.filter(
+    const poleLegacyCount = checkpointOrder.filter(
       (c) => typeof c === "string" && c.trim() === entry.entityName
     ).length;
-    if (legacyCount === 0) return [];
-    const side: "left" | "right" = entry.sensingSide === "left" ? "left" : "right";
-    return Array.from({ length: legacyCount }, (_, i) => ({
+    if (poleLegacyCount === 0) return [];
+    const poleSide: "left" | "right" = entry.sensingSide === "left" ? "left" : "right";
+    return Array.from({ length: poleLegacyCount }, (_, i) => ({
       subEntityName: `${entry.entityName}_pass_legacy_${i}`,
       relativeAngleDeg: 0,
-      side,
+      side: poleSide,
       zMeters: POLE_SENSOR_Z_METERS,
       facing: "front" as const,
     }));

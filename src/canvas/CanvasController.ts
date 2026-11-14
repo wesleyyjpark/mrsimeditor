@@ -19,7 +19,7 @@ import {
 } from "../data/objects";
 import type { Champs25GateColor } from "../data/objects";
 import { ICON_BASELINE_OFFSETS } from "../data/icons";
-import type { ObjectConfig, PlacedObjectMeta, Position } from "../types";
+import type { ConeLinePoint, ObjectConfig, PlacedObjectMeta, Position } from "../types";
 import {
   FLAG_SENSOR_Z_METERS,
   isFlagPassageCheckpoint,
@@ -33,6 +33,17 @@ import {
   type PolePassageCheckpoint,
 } from "../lib/checkpointOrder";
 import {
+  applySegmentHandles,
+  cloneBezierWaypoint,
+  densifyMixedPath,
+  ensureSegmentHandles,
+  normalizeSegmentModes,
+  sampleMixedPath,
+  summarizePathMode,
+  type ConePathMode,
+  type PolyPoint,
+} from "../lib/polyline";
+import {
   buildEditorMeta,
   createUniqueId,
   downloadText,
@@ -42,6 +53,9 @@ import {
   normalizeEditorAngle,
   parseEditorMeta,
 } from "../utils";
+
+const DEFAULT_CONE_LINE_SPACING_METERS = 1;
+const DISC_CONE_TYPE_ID = "disc-cone";
 
 const PIXELS_PER_METER = 40;
 const GRID_BOTTOM_MARGIN = 160;
@@ -63,6 +77,8 @@ export interface ControllerSettings {
   globalOffsetY: number;
   globalRotation: number;
   rulerEnabled: boolean;
+  coneLineToolEnabled: boolean;
+  coneLineSpacingMeters: number;
 }
 
 export interface CanvasControllerCallbacks {
@@ -70,6 +86,10 @@ export interface CanvasControllerCallbacks {
   onSceneChanged: () => void;
   onZoomChanged: (zoom: number) => void;
   onMultiSelectionChanged?: (count: number) => void;
+  onConeLineDraftChanged?: (pointCount: number) => void;
+  /** Fired when the controller enables/disables the tool itself (finish / cancel / start). */
+  onConeLineToolEnabledChanged?: (enabled: boolean) => void;
+  onConeLinePathModeChanged?: (mode: ConePathMode) => void;
 }
 
 interface RulerState {
@@ -78,6 +98,40 @@ interface RulerState {
   line: fabric.Line | null;
   label: fabric.Textbox | null;
   isDrawing: boolean;
+}
+
+interface ConeLineSeedRestore {
+  x: number;
+  y: number;
+  altitude: number;
+}
+
+interface ConeHandleRef {
+  pointIndex: number;
+  which: "in" | "out";
+}
+
+interface ConeLineToolState {
+  enabled: boolean;
+  points: ConeLinePoint[];
+  spacingMeters: number;
+  guide: fabric.Polyline | null;
+  previewDots: fabric.Object[];
+  /** Hollow rings at clicked control points. */
+  controlMarkers: fabric.Object[];
+  /** Bezier handle lines + knobs. */
+  handleGraphics: fabric.Object[];
+  dragHandle: ConeHandleRef | null;
+  /** Chord-relative bulge used for newly created curved segments. */
+  bulgeFactor: number;
+  /** Mode for the *next* segment only — does not rewrite prior segments. */
+  pathMode: ConePathMode;
+  /** Mode of each committed segment (length === points.length - 1). */
+  segmentModes: ConePathMode[];
+  editingLineId: string | null;
+  editingAltitude: number;
+  /** If we started from a single cone, restore it when canceling before place. */
+  seedRestore: ConeLineSeedRestore | null;
 }
 
 interface PanState {
@@ -107,6 +161,11 @@ export interface SerializedPlaced {
   sensingSide?: "left" | "right" | null;
   sensingFacing?: "front" | "back" | null;
   champsGateColor?: Champs25GateColor | null;
+  coneLineId?: string | null;
+  coneLinePoints?: ConeLinePoint[] | null;
+  coneLineSpacing?: number | null;
+  coneLineSegmentModes?: ConePathMode[] | null;
+  coneLineMode?: ConePathMode | "mixed" | null;
 }
 
 export interface SceneSnapshotShape {
@@ -150,6 +209,25 @@ export class CanvasController {
     isDrawing: false,
   };
 
+  private coneLine: ConeLineToolState = {
+    enabled: false,
+    points: [],
+    spacingMeters: DEFAULT_CONE_LINE_SPACING_METERS,
+    guide: null,
+    previewDots: [],
+    controlMarkers: [],
+    handleGraphics: [],
+    dragHandle: null,
+    bulgeFactor: 0.35,
+    pathMode: "curved",
+    segmentModes: [],
+    editingLineId: null,
+    editingAltitude: 0,
+    seedRestore: null,
+  };
+
+  private suppressSceneChanged = false;
+
   private resizeObserver: ResizeObserver | null = null;
   private boundKeyDown: (e: KeyboardEvent) => void;
   private boundKeyUp: (e: KeyboardEvent) => void;
@@ -173,6 +251,9 @@ export class CanvasController {
     this.canvasHeight = this.canvas.getHeight();
     this.defaultCursor = this.canvas.defaultCursor || "default";
     this.ruler.enabled = initialSettings.rulerEnabled;
+    this.coneLine.enabled = initialSettings.coneLineToolEnabled;
+    this.coneLine.spacingMeters =
+      initialSettings.coneLineSpacingMeters || DEFAULT_CONE_LINE_SPACING_METERS;
 
     this.boundKeyDown = this.handleKeyDown.bind(this);
     this.boundKeyUp = this.handleKeyUp.bind(this);
@@ -251,6 +332,11 @@ export class CanvasController {
       sensingSide: m.sensingSide ?? null,
       sensingFacing: m.sensingFacing ?? null,
       champsGateColor: m.champsGateColor,
+      coneLineId: m.coneLineId ?? null,
+      coneLinePoints: m.coneLinePoints ?? null,
+      coneLineSpacing: m.coneLineSpacing ?? null,
+      coneLineSegmentModes: m.coneLineSegmentModes ?? null,
+      coneLineMode: m.coneLineMode ?? null,
     }));
     return {
       canvas: json,
@@ -328,6 +414,11 @@ export class CanvasController {
                     normalizedId.legacyChampsGateColor ??
                     "red")
                   : undefined,
+              coneLineId: stored?.coneLineId ?? null,
+              coneLinePoints: stored?.coneLinePoints ?? null,
+              coneLineSpacing: stored?.coneLineSpacing ?? null,
+              coneLineSegmentModes: stored?.coneLineSegmentModes ?? null,
+              coneLineMode: stored?.coneLineMode ?? null,
             };
             this.applyVisualDefaults(obj, config);
             this.placedObjects.push(meta);
@@ -381,7 +472,699 @@ export class CanvasController {
         this.resetRulerMeasurement();
         this.clearRulerGraphics();
       }
+      if (settings.rulerEnabled && this.coneLine.enabled) {
+        this.setConeLineToolEnabled(false);
+      }
     }
+    if (
+      settings.coneLineSpacingMeters !== undefined &&
+      settings.coneLineSpacingMeters !== prev.coneLineSpacingMeters
+    ) {
+      this.coneLine.spacingMeters = Math.max(
+        0.1,
+        Math.min(20, settings.coneLineSpacingMeters)
+      );
+      if (this.coneLine.enabled && this.coneLine.points.length > 0) {
+        this.refreshConeLinePreview();
+      }
+    }
+    if (
+      settings.coneLineToolEnabled !== undefined &&
+      settings.coneLineToolEnabled !== prev.coneLineToolEnabled
+    ) {
+      this.setConeLineToolEnabled(settings.coneLineToolEnabled, { notifyStore: false });
+    }
+  }
+
+  private notifySceneChanged(): void {
+    if (!this.suppressSceneChanged) {
+      this.callbacks.onSceneChanged();
+    }
+  }
+
+  private notifyConeLineDraft(): void {
+    this.callbacks.onConeLineDraftChanged?.(this.coneLine.points.length);
+  }
+
+  /* Cone line tool */
+
+  setConeLineToolEnabled(enabled: boolean, opts: { notifyStore?: boolean } = {}): void {
+    if (this.coneLine.enabled === enabled) {
+      if (enabled) this.refreshConeLinePreview();
+      return;
+    }
+    this.coneLine.enabled = enabled;
+    this.settings.coneLineToolEnabled = enabled;
+    if (enabled) {
+      if (this.ruler.enabled) {
+        this.ruler.enabled = false;
+        this.settings.rulerEnabled = false;
+        this.resetRulerMeasurement();
+        this.clearRulerGraphics();
+      }
+      this.canvas.discardActiveObject();
+      this.setActiveMeta(null);
+      this.canvas.selection = false;
+      this.canvas.defaultCursor = "crosshair";
+      this.canvas.hoverCursor = "crosshair";
+    } else {
+      this.clearConeLinePreviewGraphics();
+      this.coneLine.points = [];
+      this.coneLine.segmentModes = [];
+      this.coneLine.editingLineId = null;
+      this.coneLine.editingAltitude = 0;
+      this.coneLine.seedRestore = null;
+      this.notifyConeLineDraft();
+      this.canvas.selection = true;
+      this.canvas.defaultCursor = this.defaultCursor;
+      this.canvas.hoverCursor = "move";
+    }
+    this.canvas.requestRenderAll();
+    if (opts.notifyStore !== false) {
+      this.callbacks.onConeLineToolEnabledChanged?.(enabled);
+    }
+  }
+
+  setConeLineSpacingMeters(spacing: number): void {
+    this.coneLine.spacingMeters = Math.max(0.1, Math.min(20, spacing));
+    this.settings.coneLineSpacingMeters = this.coneLine.spacingMeters;
+    if (this.coneLine.enabled) {
+      this.refreshConeLinePreview();
+    }
+  }
+
+  getConeLineDraftPointCount(): number {
+    return this.coneLine.points.length;
+  }
+
+  getConeLineBulgeFactor(): number {
+    return this.coneLine.bulgeFactor;
+  }
+
+  getConeLinePathMode(): ConePathMode {
+    return this.coneLine.pathMode;
+  }
+
+  getConeLineMemberCount(lineId: string | null | undefined): number {
+    if (!lineId) return 0;
+    return this.placedObjects.filter((m) => m.coneLineId === lineId).length;
+  }
+
+  /**
+   * Sets the mode for the *next* segment only. Already-placed segments keep
+   * their own straight/curved setting.
+   */
+  setConeLinePathMode(mode: ConePathMode, opts: { notifyStore?: boolean } = {}): void {
+    this.coneLine.pathMode = mode;
+    if (mode === "curved" && this.coneLine.bulgeFactor <= 0) {
+      this.coneLine.bulgeFactor = 0.35;
+    }
+    if (this.coneLine.enabled) {
+      // Preview ghost segment uses the new mode; committed geometry is untouched.
+      this.refreshConeLinePreview();
+    }
+    if (opts.notifyStore !== false) {
+      this.callbacks.onConeLinePathModeChanged?.(mode);
+    }
+  }
+
+  /**
+   * Bulge for new curved segments. If the last committed segment is curved,
+   * also reshapes that segment's handles only.
+   */
+  setConeLineBulgeFactor(factor: number): void {
+    this.coneLine.bulgeFactor = Math.max(0, Math.min(1.2, factor));
+    if (this.coneLine.bulgeFactor <= 0) {
+      this.setConeLinePathMode("straight");
+      return;
+    }
+    if (this.coneLine.pathMode !== "curved") {
+      this.setConeLinePathMode("curved");
+    }
+    const last = this.coneLine.segmentModes.length - 1;
+    if (this.coneLine.enabled && last >= 0 && this.coneLine.segmentModes[last] === "curved") {
+      applySegmentHandles(this.coneLine.points, last, "curved", {
+        force: true,
+        bulgeFactor: this.coneLine.bulgeFactor,
+      });
+      this.refreshConeLinePreview();
+    } else if (this.coneLine.enabled) {
+      this.refreshConeLinePreview();
+    }
+  }
+
+  /**
+   * Start a cone line from the currently selected disc cone.
+   * That cone becomes the first control point (removed until place/cancel).
+   */
+  startConeLineFromSelection(mode: ConePathMode = "curved"): boolean {
+    const meta = this.activeMeta;
+    if (!meta || meta.config.id !== DISC_CONE_TYPE_ID) return false;
+    if (meta.coneLineId) return false;
+
+    this.updateObjectMetadata(meta.fabricObject);
+    const pos = meta.position ?? this.getObjectPositionMeters(meta.fabricObject);
+    const altitude = meta.altitude ?? 0;
+
+    this.suppressSceneChanged = true;
+    try {
+      this.canvas.remove(meta.fabricObject);
+      this.metaByObjectId.delete(meta.fabricObject);
+      this.placedObjects = this.placedObjects.filter((m) => m.id !== meta.id);
+    } finally {
+      this.suppressSceneChanged = false;
+    }
+    this.notifySceneChanged();
+
+    this.setConeLineToolEnabled(true);
+    this.coneLine.points = [{ x: pos.x, y: pos.y }];
+    this.coneLine.segmentModes = [];
+    this.coneLine.editingLineId = null;
+    this.coneLine.editingAltitude = altitude;
+    this.coneLine.seedRestore = { x: pos.x, y: pos.y, altitude };
+    this.coneLine.bulgeFactor = 0.35;
+    this.coneLine.pathMode = mode;
+    this.callbacks.onConeLinePathModeChanged?.(mode);
+    this.notifyConeLineDraft();
+    this.refreshConeLinePreview();
+    return true;
+  }
+
+  private metersToCanvasPoint(meters: PolyPoint): { x: number; y: number } {
+    const origin = this.getGridOrigin();
+    return {
+      x: origin.x + meters.x * PIXELS_PER_METER,
+      y: origin.y - meters.y * PIXELS_PER_METER,
+    };
+  }
+
+  private clearConeLinePreviewGraphics(): void {
+    if (this.coneLine.guide) {
+      this.canvas.remove(this.coneLine.guide);
+      this.coneLine.guide = null;
+    }
+    this.coneLine.previewDots.forEach((dot) => this.canvas.remove(dot));
+    this.coneLine.previewDots = [];
+    this.coneLine.controlMarkers.forEach((m) => this.canvas.remove(m));
+    this.coneLine.controlMarkers = [];
+    this.coneLine.handleGraphics.forEach((m) => this.canvas.remove(m));
+    this.coneLine.handleGraphics = [];
+  }
+
+  private async restoreConeLineSeed(): Promise<void> {
+    const seed = this.coneLine.seedRestore;
+    if (!seed) return;
+    this.coneLine.seedRestore = null;
+    const placed = await this.addObjectToScene(
+      DISC_CONE_TYPE_ID,
+      { x: seed.x, y: seed.y, altitude: seed.altitude },
+      { silent: false }
+    );
+    if (placed) {
+      this.canvas.setActiveObject(placed.fabricObject);
+      this.setActiveMeta(placed);
+    }
+  }
+
+  private previewSegmentModes(includeCursor: boolean): ConePathMode[] {
+    const modes = [...this.coneLine.segmentModes];
+    if (includeCursor && this.coneLine.points.length >= 1) {
+      modes.push(this.coneLine.pathMode);
+    }
+    return modes;
+  }
+
+  private refreshConeLinePreview(cursorMeters?: PolyPoint | null): void {
+    this.clearConeLinePreviewGraphics();
+    const pathPoints = this.coneLine.points.map(cloneBezierWaypoint);
+    const showCursor = Boolean(cursorMeters && !this.coneLine.dragHandle);
+    if (showCursor && cursorMeters) {
+      pathPoints.push({ x: cursorMeters.x, y: cursorMeters.y });
+    }
+    if (pathPoints.length === 0) return;
+
+    const segmentModes = normalizeSegmentModes(
+      pathPoints.length,
+      this.previewSegmentModes(showCursor),
+      this.coneLine.pathMode
+    );
+    const handledPreview = ensureSegmentHandles(pathPoints, segmentModes, {
+      bulgeFactor: this.coneLine.bulgeFactor,
+    });
+
+    if (handledPreview.length >= 2) {
+      const dense = densifyMixedPath(handledPreview, segmentModes, 20);
+      const canvasPts = dense.map((p) => this.metersToCanvasPoint(p));
+      const allStraight = segmentModes.every((m) => m === "straight");
+      this.coneLine.guide = new fabric.Polyline(
+        canvasPts.map((p) => ({ x: p.x, y: p.y })),
+        {
+          fill: "transparent",
+          stroke: "#ff6d00",
+          strokeWidth: 2,
+          strokeDashArray: allStraight ? undefined : [8, 6],
+          selectable: false,
+          evented: false,
+          objectCaching: false,
+          excludeFromExport: true,
+        }
+      );
+      this.canvas.add(this.coneLine.guide);
+      this.coneLine.guide.bringToFront();
+    }
+
+    // Waypoint rings
+    for (const wp of this.coneLine.points) {
+      const c = this.metersToCanvasPoint(wp);
+      const ring = new fabric.Circle({
+        left: c.x,
+        top: c.y,
+        radius: 7,
+        originX: "center",
+        originY: "center",
+        fill: "transparent",
+        stroke: "#ff6d00",
+        strokeWidth: 2,
+        selectable: false,
+        evented: false,
+        excludeFromExport: true,
+      });
+      this.canvas.add(ring);
+      this.coneLine.controlMarkers.push(ring);
+    }
+
+    // Handles only for committed curved segments
+    const committedModes = normalizeSegmentModes(
+      this.coneLine.points.length,
+      this.coneLine.segmentModes,
+      this.coneLine.pathMode
+    );
+    this.coneLine.points = ensureSegmentHandles(this.coneLine.points, committedModes, {
+      bulgeFactor: this.coneLine.bulgeFactor,
+    });
+    for (let i = 0; i < committedModes.length; i += 1) {
+      if (committedModes[i] !== "curved") continue;
+      const a = this.coneLine.points[i];
+      const b = this.coneLine.points[i + 1];
+      if (!a || !b) continue;
+      const anchorA = this.metersToCanvasPoint(a);
+      const anchorB = this.metersToCanvasPoint(b);
+      if (typeof a.outX === "number" && typeof a.outY === "number") {
+        this.addConeHandleVisual(
+          i,
+          "out",
+          anchorA,
+          this.metersToCanvasPoint({ x: a.outX, y: a.outY })
+        );
+      }
+      if (typeof b.inX === "number" && typeof b.inY === "number") {
+        this.addConeHandleVisual(
+          i + 1,
+          "in",
+          anchorB,
+          this.metersToCanvasPoint({ x: b.inX, y: b.inY })
+        );
+      }
+    }
+
+    const samples =
+      handledPreview.length >= 2
+        ? sampleMixedPath(handledPreview, segmentModes, this.coneLine.spacingMeters)
+        : handledPreview.map((p) => ({ ...p, angle: 0 }));
+    for (const sample of samples) {
+      const c = this.metersToCanvasPoint(sample);
+      const dot = new fabric.Circle({
+        left: c.x,
+        top: c.y,
+        radius: 4,
+        originX: "center",
+        originY: "center",
+        fill: "#ff6d00",
+        stroke: "#e65100",
+        strokeWidth: 1,
+        selectable: false,
+        evented: false,
+        excludeFromExport: true,
+      });
+      this.canvas.add(dot);
+      this.coneLine.previewDots.push(dot);
+    }
+    this.canvas.requestRenderAll();
+  }
+
+  private addConeHandleVisual(
+    pointIndex: number,
+    which: "in" | "out",
+    anchor: { x: number; y: number },
+    handle: { x: number; y: number }
+  ): void {
+    const line = new fabric.Line([anchor.x, anchor.y, handle.x, handle.y], {
+      stroke: "#fb8c00",
+      strokeWidth: 1,
+      selectable: false,
+      evented: false,
+      excludeFromExport: true,
+      objectCaching: false,
+    });
+    const knob = new fabric.Circle({
+      left: handle.x,
+      top: handle.y,
+      radius: 6,
+      originX: "center",
+      originY: "center",
+      fill: "#fff3e0",
+      stroke: "#ef6c00",
+      strokeWidth: 2,
+      selectable: false,
+      evented: true,
+      hoverCursor: "grab",
+      excludeFromExport: true,
+      objectCaching: false,
+    });
+    (knob as fabric.Object & { data?: { coneHandle: ConeHandleRef } }).data = {
+      coneHandle: { pointIndex, which },
+    };
+    this.canvas.add(line);
+    this.canvas.add(knob);
+    knob.bringToFront();
+    this.coneLine.handleGraphics.push(line, knob);
+  }
+
+  private coneHandleFromTarget(target: fabric.Object | undefined | null): ConeHandleRef | null {
+    if (!target) return null;
+    const data = (target as fabric.Object & { data?: { coneHandle?: ConeHandleRef } }).data;
+    return data?.coneHandle ?? null;
+  }
+
+  /** Fallback when Fabric doesn't report the knob as `event.target`. */
+  private findConeHandleAtPointer(pointer: { x: number; y: number }): ConeHandleRef | null {
+    const hitR = 10;
+    const hitR2 = hitR * hitR;
+    for (const obj of this.coneLine.handleGraphics) {
+      const data = (obj as fabric.Object & { data?: { coneHandle?: ConeHandleRef } }).data;
+      if (!data?.coneHandle) continue;
+      const left = obj.left ?? 0;
+      const top = obj.top ?? 0;
+      const dx = pointer.x - left;
+      const dy = pointer.y - top;
+      if (dx * dx + dy * dy <= hitR2) return { ...data.coneHandle };
+    }
+    return null;
+  }
+
+  private handleConeLineClick(
+    pointer: { x: number; y: number },
+    target?: fabric.Object | null
+  ): void {
+    if (!this.coneLine.enabled) return;
+    const handle = this.coneHandleFromTarget(target) ?? this.findConeHandleAtPointer(pointer);
+    if (handle) {
+      this.coneLine.dragHandle = { ...handle };
+      return;
+    }
+    const meters = this.pointerToMeters(pointer);
+    this.coneLine.points.push({ x: meters.x, y: meters.y });
+    if (this.coneLine.points.length >= 2) {
+      const segIndex = this.coneLine.points.length - 2;
+      this.coneLine.segmentModes.push(this.coneLine.pathMode);
+      applySegmentHandles(this.coneLine.points, segIndex, this.coneLine.pathMode, {
+        force: true,
+        bulgeFactor: this.coneLine.bulgeFactor,
+      });
+    }
+    this.notifyConeLineDraft();
+    this.refreshConeLinePreview();
+  }
+
+  private handleConeLineMove(pointer: { x: number; y: number }): void {
+    if (!this.coneLine.enabled) return;
+    const meters = this.pointerToMeters(pointer);
+    if (this.coneLine.dragHandle) {
+      const { pointIndex, which } = this.coneLine.dragHandle;
+      const pt = this.coneLine.points[pointIndex];
+      if (!pt) return;
+      if (which === "out") {
+        pt.outX = meters.x;
+        pt.outY = meters.y;
+      } else {
+        pt.inX = meters.x;
+        pt.inY = meters.y;
+      }
+      this.refreshConeLinePreview();
+      return;
+    }
+    if (this.coneLine.points.length === 0) return;
+    this.refreshConeLinePreview(meters);
+  }
+
+  private handleConeLineMouseUp(): void {
+    if (this.coneLine.dragHandle) {
+      this.coneLine.dragHandle = null;
+      this.refreshConeLinePreview();
+    }
+  }
+
+  async finishConeLine(): Promise<number> {
+    if (!this.coneLine.enabled || this.coneLine.points.length < 2) return 0;
+    const segmentModes = normalizeSegmentModes(
+      this.coneLine.points.length,
+      this.coneLine.segmentModes,
+      this.coneLine.pathMode
+    );
+    const points = ensureSegmentHandles(this.coneLine.points, segmentModes, {
+      bulgeFactor: this.coneLine.bulgeFactor,
+    }).map(cloneBezierWaypoint);
+    const spacing = this.coneLine.spacingMeters;
+    const lineId = this.coneLine.editingLineId ?? createUniqueId();
+    const altitude = this.coneLine.editingAltitude;
+    const summaryMode = summarizePathMode(segmentModes);
+    const samples = sampleMixedPath(points, segmentModes, spacing);
+
+    this.clearConeLinePreviewGraphics();
+    this.coneLine.points = [];
+    this.coneLine.segmentModes = [];
+    this.coneLine.editingLineId = null;
+    this.coneLine.editingAltitude = 0;
+    this.coneLine.seedRestore = null;
+    this.coneLine.dragHandle = null;
+    this.notifyConeLineDraft();
+
+    this.suppressSceneChanged = true;
+    let lastMeta: PlacedObjectMeta | null = null;
+    try {
+      for (const sample of samples) {
+        lastMeta = await this.addObjectToScene(
+          DISC_CONE_TYPE_ID,
+          {
+            x: sample.x,
+            y: sample.y,
+            angle: sample.angle,
+            altitude,
+          },
+          {
+            silent: true,
+            coneLineId: lineId,
+            coneLinePoints: points,
+            coneLineSpacing: spacing,
+            coneLineSegmentModes: segmentModes,
+            coneLineMode: summaryMode,
+          }
+        );
+      }
+    } finally {
+      this.suppressSceneChanged = false;
+    }
+
+    this.setConeLineToolEnabled(false);
+    if (lastMeta) {
+      this.canvas.setActiveObject(lastMeta.fabricObject);
+      this.setActiveMeta(lastMeta);
+    } else {
+      this.canvas.discardActiveObject();
+      this.setActiveMeta(null);
+    }
+    this.canvas.requestRenderAll();
+    this.notifySceneChanged();
+    return samples.length;
+  }
+
+  async cancelConeLine(): Promise<void> {
+    if (!this.coneLine.enabled) return;
+    const seed = this.coneLine.seedRestore;
+    this.clearConeLinePreviewGraphics();
+    this.coneLine.points = [];
+    this.coneLine.segmentModes = [];
+    this.coneLine.editingLineId = null;
+    this.coneLine.editingAltitude = 0;
+    this.coneLine.dragHandle = null;
+    this.notifyConeLineDraft();
+    this.setConeLineToolEnabled(false);
+    if (seed) {
+      this.coneLine.seedRestore = seed;
+      await this.restoreConeLineSeed();
+    }
+    this.canvas.requestRenderAll();
+  }
+
+  /**
+   * Remove all cones in a line and re-enter draw mode with the same control points.
+   */
+  beginEditConeLine(lineId: string): void {
+    const members = this.placedObjects.filter((m) => m.coneLineId === lineId);
+    if (members.length === 0) return;
+    const rawPoints = (members[0].coneLinePoints ?? []).map(cloneBezierWaypoint);
+    if (rawPoints.length < 2) return;
+    const fallback: ConePathMode =
+      members[0].coneLineMode === "straight" ? "straight" : "curved";
+    const segmentModes = normalizeSegmentModes(
+      rawPoints.length,
+      members[0].coneLineSegmentModes,
+      fallback
+    );
+    const points = ensureSegmentHandles(rawPoints, segmentModes);
+    const spacing = members[0].coneLineSpacing ?? this.coneLine.spacingMeters;
+    const altitude = members[0].altitude ?? 0;
+    const nextMode = segmentModes[segmentModes.length - 1] ?? fallback;
+
+    this.suppressSceneChanged = true;
+    try {
+      members.forEach((m) => {
+        this.canvas.remove(m.fabricObject);
+        this.metaByObjectId.delete(m.fabricObject);
+      });
+      this.placedObjects = this.placedObjects.filter((m) => m.coneLineId !== lineId);
+    } finally {
+      this.suppressSceneChanged = false;
+    }
+    this.notifySceneChanged();
+
+    this.setConeLineToolEnabled(true);
+    this.setConeLineSpacingMeters(spacing);
+    this.coneLine.points = points;
+    this.coneLine.segmentModes = segmentModes;
+    this.coneLine.editingLineId = lineId;
+    this.coneLine.editingAltitude = altitude;
+    this.coneLine.seedRestore = null;
+    this.coneLine.dragHandle = null;
+    this.coneLine.pathMode = nextMode;
+    this.coneLine.bulgeFactor = 0.35;
+    this.callbacks.onConeLinePathModeChanged?.(nextMode);
+    this.notifyConeLineDraft();
+    this.refreshConeLinePreview();
+  }
+
+  async setConeLineSpacingForSelection(spacingMeters: number): Promise<void> {
+    const meta = this.activeMeta;
+    if (!meta?.coneLineId || !meta.coneLinePoints || meta.coneLinePoints.length < 2) return;
+    const lineId = meta.coneLineId;
+    const fallback: ConePathMode = meta.coneLineMode === "straight" ? "straight" : "curved";
+    const segmentModes = normalizeSegmentModes(
+      meta.coneLinePoints.length,
+      meta.coneLineSegmentModes,
+      fallback
+    );
+    const points = ensureSegmentHandles(
+      meta.coneLinePoints.map(cloneBezierWaypoint),
+      segmentModes
+    );
+    const altitude = meta.altitude ?? 0;
+    const spacing = Math.max(0.1, Math.min(20, spacingMeters));
+    const summaryMode = summarizePathMode(segmentModes);
+
+    this.suppressSceneChanged = true;
+    try {
+      this.placedObjects
+        .filter((m) => m.coneLineId === lineId)
+        .forEach((m) => {
+          this.canvas.remove(m.fabricObject);
+          this.metaByObjectId.delete(m.fabricObject);
+        });
+      this.placedObjects = this.placedObjects.filter((m) => m.coneLineId !== lineId);
+
+      const samples = sampleMixedPath(points, segmentModes, spacing);
+      for (const sample of samples) {
+        await this.addObjectToScene(
+          DISC_CONE_TYPE_ID,
+          {
+            x: sample.x,
+            y: sample.y,
+            angle: sample.angle,
+            altitude,
+          },
+          {
+            silent: true,
+            coneLineId: lineId,
+            coneLinePoints: points,
+            coneLineSpacing: spacing,
+            coneLineSegmentModes: segmentModes,
+            coneLineMode: summaryMode,
+          }
+        );
+      }
+    } finally {
+      this.suppressSceneChanged = false;
+    }
+
+    const first = this.placedObjects.find((m) => m.coneLineId === lineId);
+    if (first) {
+      this.canvas.setActiveObject(first.fabricObject);
+      this.setActiveMeta(first);
+    } else {
+      this.setActiveMeta(null);
+    }
+    this.canvas.requestRenderAll();
+    this.notifySceneChanged();
+  }
+
+  deleteConeLine(lineId: string): void {
+    const members = this.placedObjects.filter((m) => m.coneLineId === lineId);
+    if (members.length === 0) return;
+    members.forEach((m) => {
+      this.canvas.remove(m.fabricObject);
+      this.metaByObjectId.delete(m.fabricObject);
+    });
+    this.placedObjects = this.placedObjects.filter((m) => m.coneLineId !== lineId);
+    this.setActiveMeta(null);
+    this.canvas.discardActiveObject();
+    this.canvas.requestRenderAll();
+    this.notifySceneChanged();
+  }
+
+  breakConeLineApart(lineId: string): void {
+    let changed = false;
+    this.placedObjects.forEach((m) => {
+      if (m.coneLineId !== lineId) return;
+      m.coneLineId = null;
+      m.coneLinePoints = null;
+      m.coneLineSpacing = null;
+      m.coneLineSegmentModes = null;
+      m.coneLineMode = null;
+      changed = true;
+    });
+    if (!changed) return;
+    if (this.activeMeta) {
+      this.callbacks.onSelectionChanged(this.activeMeta);
+    }
+    this.notifySceneChanged();
+  }
+
+  selectConeLineMembers(lineId: string): void {
+    const members = this.placedObjects.filter((m) => m.coneLineId === lineId);
+    if (members.length === 0) return;
+    if (members.length === 1) {
+      this.canvas.setActiveObject(members[0].fabricObject);
+      this.setActiveMeta(members[0]);
+      this.canvas.requestRenderAll();
+      return;
+    }
+    const selection = new fabric.ActiveSelection(
+      members.map((m) => m.fabricObject),
+      { canvas: this.canvas }
+    );
+    this.canvas.setActiveObject(selection);
+    this.setActiveMeta(null);
+    this.notifyMultiSelection();
+    this.canvas.requestRenderAll();
   }
 
   observeWrapper(wrapper: HTMLElement): void {
@@ -520,11 +1303,12 @@ export class CanvasController {
   }
 
   private updatePanCursor(): void {
+    const idleCursor = this.coneLine.enabled ? "crosshair" : this.defaultCursor;
     const cursor = this.panState.isDragging
       ? PAN_ACTIVE_CURSOR
       : this.panState.keyActive
         ? PAN_CURSOR
-        : this.defaultCursor;
+        : idleCursor;
     this.canvas.defaultCursor = cursor;
     const canvasAny = this.canvas as unknown as {
       upperCanvasEl?: HTMLElement;
@@ -1200,11 +1984,22 @@ export class CanvasController {
     this.entityCounters = {};
   }
 
-  async addObjectToScene(typeId: string, opts: Partial<Position> = {}): Promise<void> {
+  async addObjectToScene(
+    typeId: string,
+    opts: Partial<Position> = {},
+    extras: {
+      silent?: boolean;
+      coneLineId?: string | null;
+      coneLinePoints?: ConeLinePoint[] | null;
+      coneLineSpacing?: number | null;
+      coneLineSegmentModes?: ConePathMode[] | null;
+      coneLineMode?: ConePathMode | "mixed" | null;
+    } = {}
+  ): Promise<PlacedObjectMeta | null> {
     const config = OBJECT_LOOKUP[typeId];
     if (!config) {
       console.warn(`Unknown object id: ${typeId}`);
-      return;
+      return null;
     }
     const fabricObject = await this.createFabricObject(config);
     fabricObject.data = { typeId: config.id };
@@ -1216,7 +2011,9 @@ export class CanvasController {
     };
     this.placeObjectAt(fabricObject, initialPosition);
     this.canvas.add(fabricObject);
-    this.canvas.setActiveObject(fabricObject);
+    if (!extras.silent) {
+      this.canvas.setActiveObject(fabricObject);
+    }
     fabricObject.setCoords();
     const entityName = this.allocateEntityName(config.entityPrefix);
     const hasSensing = !!(config.sensingLineMeters && config.sensingLineMeters > 0);
@@ -1225,12 +2022,20 @@ export class CanvasController {
       config,
       fabricObject,
       entityName,
-      altitude: config.altitude ?? 0,
+      altitude:
+        typeof opts.altitude === "number" && Number.isFinite(opts.altitude)
+          ? opts.altitude
+          : config.altitude ?? 0,
       stackCount: isStackableGateConfig(config) ? 1 : undefined,
       sensingSide: hasSensing ? this.initialSensingSideForConfig(config) : null,
       sensingFacing:
         hasSensing && getPassageTarget(config) === "flag" ? "front" : null,
       champsGateColor: config.id === "champs-25-gate" ? "red" : undefined,
+      coneLineId: extras.coneLineId ?? null,
+      coneLinePoints: extras.coneLinePoints ?? null,
+      coneLineSpacing: extras.coneLineSpacing ?? null,
+      coneLineSegmentModes: extras.coneLineSegmentModes ?? null,
+      coneLineMode: extras.coneLineMode ?? null,
     };
     this.placedObjects.push(metadata);
     this.metaByObjectId.set(fabricObject, metadata);
@@ -1238,9 +2043,14 @@ export class CanvasController {
       this.applySensingSideVisibility(metadata);
     }
     this.updateObjectMetadata(fabricObject);
-    this.setActiveMeta(metadata);
+    if (!extras.silent) {
+      this.setActiveMeta(metadata);
+    }
     this.canvas.requestRenderAll();
-    this.callbacks.onSceneChanged();
+    if (!extras.silent) {
+      this.notifySceneChanged();
+    }
+    return metadata;
   }
 
   duplicateSelected(): void {
@@ -1299,6 +2109,11 @@ export class CanvasController {
   }
 
   clearScene(): void {
+    if (this.coneLine.enabled) {
+      this.setConeLineToolEnabled(false, { notifyStore: true });
+    } else {
+      this.clearConeLinePreviewGraphics();
+    }
     this.placedObjects.forEach((entry) => this.canvas.remove(entry.fabricObject));
     this.placedObjects = [];
     this.metaByObjectId.clear();
@@ -1914,11 +2729,25 @@ export class CanvasController {
 
   private handleKeyDown(event: KeyboardEvent): void {
     if (event.code === "Escape") {
+      if (this.coneLine.enabled) {
+        void this.cancelConeLine();
+        event.preventDefault();
+        return;
+      }
       if (this.ruler.enabled) {
         this.resetRulerMeasurement();
         this.clearRulerGraphics();
         this.canvas.requestRenderAll();
       }
+      return;
+    }
+    if (
+      this.coneLine.enabled &&
+      (event.code === "Enter" || event.code === "NumpadEnter") &&
+      !this.isEditableElement(event.target)
+    ) {
+      event.preventDefault();
+      void this.finishConeLine();
       return;
     }
     if (
@@ -2046,6 +2875,19 @@ export class CanvasController {
 
     this.canvas.on("mouse:down", (event) => {
       const domEvent = event.e as MouseEvent;
+      if (this.coneLine.enabled && domEvent.button === 0 && !this.panState.keyActive) {
+        domEvent.preventDefault();
+        domEvent.stopPropagation();
+        // Second click of a double-click finishes instead of adding a duplicate vertex.
+        // Don't finish while dragging a handle.
+        if (domEvent.detail >= 2 && !this.coneLine.dragHandle) {
+          void this.finishConeLine();
+          return;
+        }
+        const pointer = this.canvas.getPointer(domEvent);
+        this.handleConeLineClick(pointer, event.target ?? null);
+        return;
+      }
       if (this.ruler.enabled && domEvent.button === 0 && !this.panState.keyActive) {
         const pointer = this.canvas.getPointer(domEvent);
         this.handleRulerClick(pointer);
@@ -2063,6 +2905,7 @@ export class CanvasController {
 
     this.canvas.on("mouse:move", (event) => {
       const pointer = this.canvas.getPointer(event.e);
+      this.handleConeLineMove(pointer);
       this.handleRulerMove(pointer);
       if (!this.panState.isDragging) return;
       const domEvent = event.e as MouseEvent;
@@ -2071,7 +2914,10 @@ export class CanvasController {
       domEvent.stopPropagation();
     });
 
-    this.canvas.on("mouse:up", () => this.endPanInteraction());
+    this.canvas.on("mouse:up", () => {
+      this.handleConeLineMouseUp();
+      this.endPanInteraction();
+    });
     this.canvas.on("mouse:out", () => this.endPanInteraction());
 
     this.canvas.on("mouse:wheel", (event) => {
@@ -2260,6 +3106,19 @@ export class CanvasController {
       };
 
       const metaChamps = meta?.champsGateColor as Champs25GateColor | undefined;
+      const rawConePoints = meta?.coneLinePoints;
+      const coneLinePoints = Array.isArray(rawConePoints)
+        ? (rawConePoints as ConeLinePoint[])
+            .filter(
+              (p) =>
+                p &&
+                typeof p.x === "number" &&
+                typeof p.y === "number" &&
+                Number.isFinite(p.x) &&
+                Number.isFinite(p.y)
+            )
+            .map((p) => cloneBezierWaypoint(p))
+        : null;
       const importedMeta = await this.addObjectFromImport(typeConfig, position, {
         id: meta?.id as string | undefined,
         entityName,
@@ -2276,6 +3135,23 @@ export class CanvasController {
           typeConfig.id === "champs-25-gate"
             ? metaChamps ?? importChampsColor ?? "red"
             : undefined,
+        coneLineId: (meta?.coneLineId as string | undefined) ?? null,
+        coneLinePoints,
+        coneLineSpacing:
+          typeof meta?.coneLineSpacing === "number" && Number.isFinite(meta.coneLineSpacing)
+            ? (meta.coneLineSpacing as number)
+            : null,
+        coneLineSegmentModes: Array.isArray(meta?.coneLineSegmentModes)
+          ? (meta.coneLineSegmentModes as ConePathMode[]).filter(
+              (m) => m === "straight" || m === "curved"
+            )
+          : null,
+        coneLineMode:
+          meta?.coneLineMode === "straight" ||
+          meta?.coneLineMode === "curved" ||
+          meta?.coneLineMode === "mixed"
+            ? (meta.coneLineMode as ConePathMode | "mixed")
+            : null,
       });
 
       const metaId = meta?.id as string | undefined;
@@ -2360,6 +3236,11 @@ export class CanvasController {
       /** From old type id or Include path when importing unified `flag`. */
       importFlagSensing?: "left" | "right" | null;
       champsGateColor?: Champs25GateColor;
+      coneLineId?: string | null;
+      coneLinePoints?: ConeLinePoint[] | null;
+      coneLineSpacing?: number | null;
+      coneLineSegmentModes?: ConePathMode[] | null;
+      coneLineMode?: ConePathMode | "mixed" | null;
     }
   ): Promise<PlacedObjectMeta> {
     const fabricObject = await this.createFabricObject(config);
@@ -2407,6 +3288,11 @@ export class CanvasController {
         config.id === "champs-25-gate"
           ? meta.champsGateColor ?? "red"
           : undefined,
+      coneLineId: meta.coneLineId ?? null,
+      coneLinePoints: meta.coneLinePoints ?? null,
+      coneLineSpacing: meta.coneLineSpacing ?? null,
+      coneLineSegmentModes: meta.coneLineSegmentModes ?? null,
+      coneLineMode: meta.coneLineMode ?? null,
     };
     this.updateEntityCounterFromName(metadata.entityName);
     this.placedObjects.push(metadata);
@@ -2626,6 +3512,15 @@ export class CanvasController {
         sensingFacing: getPassageTarget(entry.config) === "flag" ? entry.sensingFacing ?? null : null,
         ...(entry.config.id === "champs-25-gate"
           ? { champsGateColor: entry.champsGateColor ?? "red" }
+          : {}),
+        ...(entry.coneLineId
+          ? {
+              coneLineId: entry.coneLineId,
+              coneLinePoints: entry.coneLinePoints ?? null,
+              coneLineSpacing: entry.coneLineSpacing ?? null,
+              coneLineSegmentModes: entry.coneLineSegmentModes ?? null,
+              coneLineMode: entry.coneLineMode ?? "curved",
+            }
           : {}),
       };
 

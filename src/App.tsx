@@ -15,10 +15,14 @@ import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useHistorySync } from "@/hooks/useHistorySync";
 import { useHistoryStore } from "@/store/historyStore";
 
-function metaToSnapshot(meta: PlacedObjectMeta | null): SelectedObjectSnapshot | null {
+function metaToSnapshot(
+  meta: PlacedObjectMeta | null,
+  controller?: CanvasController | null
+): SelectedObjectSnapshot | null {
   if (!meta) return null;
   const angle = meta.angle !== undefined ? meta.angle : meta.fabricObject.angle ?? 0;
   const pos = meta.position ?? { x: 0, y: 0 };
+  const coneLineId = meta.coneLineId ?? null;
   return {
     id: meta.id,
     config: meta.config,
@@ -36,6 +40,13 @@ function metaToSnapshot(meta: PlacedObjectMeta | null): SelectedObjectSnapshot |
     sensingSide: meta.sensingSide ?? null,
     sensingFacing: meta.sensingFacing ?? null,
     champsGateColor: meta.champsGateColor ?? null,
+    coneLineId,
+    coneLineSpacing: meta.coneLineSpacing ?? null,
+    coneLineMode: meta.coneLineMode ?? null,
+    coneLinePointCount: meta.coneLinePoints?.length ?? 0,
+    coneLineMemberCount: coneLineId
+      ? controller?.getConeLineMemberCount(coneLineId) ?? 0
+      : 0,
   };
 }
 
@@ -62,10 +73,12 @@ export function App() {
         globalOffsetY: initialState.globalOffsetY,
         globalRotation: initialState.globalRotation,
         rulerEnabled: initialState.rulerEnabled,
+        coneLineToolEnabled: initialState.coneLineToolEnabled,
+        coneLineSpacingMeters: initialState.coneLineSpacingMeters,
       },
       {
         onSelectionChanged: (meta) => {
-          useEditorStore.getState().setSelected(metaToSnapshot(meta));
+          useEditorStore.getState().setSelected(metaToSnapshot(meta, ctrl));
         },
         onSceneChanged: () => {
           const placed = ctrl.getPlacedObjects().map<PlacedSummary>((entry) => ({
@@ -78,6 +91,10 @@ export function App() {
             stackCount: isGateConfig(entry.config) ? getGateStackCount(entry) : undefined,
           }));
           useEditorStore.getState().setPlacedSummary(placed);
+          const active = ctrl.getActiveMeta();
+          if (active) {
+            useEditorStore.getState().setSelected(metaToSnapshot(active, ctrl));
+          }
           if (!useHistoryStore.getState().applying) {
             const snapshot = ctrl.getSnapshot();
             snapshot.checkpointOrder = useEditorStore.getState().checkpointOrder;
@@ -86,6 +103,12 @@ export function App() {
         },
         onZoomChanged: (zoom) => useEditorStore.getState().setZoom(zoom),
         onMultiSelectionChanged: (count) => useEditorStore.getState().setMultiSelectionCount(count),
+        onConeLineDraftChanged: (pointCount) =>
+          useEditorStore.getState().setConeLineDraftPointCount(pointCount),
+        onConeLineToolEnabledChanged: (enabled) =>
+          useEditorStore.getState().setConeLineToolEnabled(enabled),
+        onConeLinePathModeChanged: (mode) =>
+          useEditorStore.getState().setConeLinePathMode(mode),
       }
     );
 
@@ -110,6 +133,8 @@ export function App() {
         globalOffsetY: number;
         globalRotation: number;
         rulerEnabled: boolean;
+        coneLineToolEnabled: boolean;
+        coneLineSpacingMeters: number;
       }> = {};
       if (state.gridSizeMeters !== prev.gridSizeMeters) changed.gridSizeMeters = state.gridSizeMeters;
       if (state.rotationSnap !== prev.rotationSnap) changed.rotationSnap = state.rotationSnap;
@@ -120,6 +145,10 @@ export function App() {
       if (state.globalOffsetY !== prev.globalOffsetY) changed.globalOffsetY = state.globalOffsetY;
       if (state.globalRotation !== prev.globalRotation) changed.globalRotation = state.globalRotation;
       if (state.rulerEnabled !== prev.rulerEnabled) changed.rulerEnabled = state.rulerEnabled;
+      if (state.coneLineToolEnabled !== prev.coneLineToolEnabled)
+        changed.coneLineToolEnabled = state.coneLineToolEnabled;
+      if (state.coneLineSpacingMeters !== prev.coneLineSpacingMeters)
+        changed.coneLineSpacingMeters = state.coneLineSpacingMeters;
       if (Object.keys(changed).length > 0) controller.updateSettings(changed);
     });
   }, [controller]);

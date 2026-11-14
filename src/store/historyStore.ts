@@ -30,6 +30,18 @@ export interface SceneSnapshot {
     sensingSide?: "left" | "right" | null;
     sensingFacing?: "front" | "back" | null;
     champsGateColor?: "red" | "green" | "blue" | "yellow" | "white" | null;
+    coneLineId?: string | null;
+    coneLinePoints?: {
+      x: number;
+      y: number;
+      outX?: number;
+      outY?: number;
+      inX?: number;
+      inY?: number;
+    }[] | null;
+    coneLineSpacing?: number | null;
+    coneLineSegmentModes?: ("straight" | "curved")[] | null;
+    coneLineMode?: "straight" | "curved" | "mixed" | null;
   }>;
 }
 

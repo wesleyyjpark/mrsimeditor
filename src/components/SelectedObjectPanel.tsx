@@ -17,6 +17,12 @@ import {
   AlignEndHorizontal,
   AlignHorizontalDistributeCenter,
   AlignVerticalDistributeCenter,
+  Check,
+  Minus,
+  Pencil,
+  Spline,
+  Unlink,
+  X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -29,6 +35,7 @@ import { IndicatorPanel } from "./IndicatorPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Kbd } from "@/components/ui/kbd";
 import {
   Accordion,
   AccordionContent,
@@ -81,6 +88,7 @@ export function SelectedObjectPanel() {
   const selected = useEditorStore((s) => s.selected);
   const placedSummary = useEditorStore((s) => s.placedSummary);
   const multiCount = useEditorStore((s) => s.multiSelectionCount);
+  const coneLineToolEnabled = useEditorStore((s) => s.coneLineToolEnabled);
   const controller = useOptionalCanvasController();
 
   const supportsIndicator = Boolean(selected && INDICATOR_CONFIGS[selected.config.id]);
@@ -92,6 +100,10 @@ export function SelectedObjectPanel() {
       selected.config.sensingLineMeters > 0
   );
   const stackable = selected ? isStackableGateConfig(selected.config) : false;
+
+  if (coneLineToolEnabled) {
+    return <ConeLineDrawingPanel controller={controller} />;
+  }
 
   if (multiCount > 1) {
     return <BulkActionsPanel count={multiCount} />;
@@ -259,6 +271,24 @@ export function SelectedObjectPanel() {
                 />
               ) : null}
 
+              {selected.coneLineId ? (
+                <ConeLineControls
+                  lineId={selected.coneLineId}
+                  spacing={selected.coneLineSpacing ?? 1}
+                  memberCount={selected.coneLineMemberCount ?? 0}
+                  pointCount={selected.coneLinePointCount ?? 0}
+                  mode={
+                    selected.coneLineMode === "straight" ||
+                    selected.coneLineMode === "mixed"
+                      ? selected.coneLineMode
+                      : "curved"
+                  }
+                  controller={controller}
+                />
+              ) : selected.config.id === "disc-cone" ? (
+                <StartConeLineControls controller={controller} />
+              ) : null}
+
               <div className="grid grid-cols-2 gap-2 pt-2">
                 <Button
                   variant="outline"
@@ -304,6 +334,356 @@ export function SelectedObjectPanel() {
             </AccordionItem>
           ) : null}
         </Accordion>
+      </div>
+    </div>
+  );
+}
+
+function StartConeLineControls({
+  controller,
+}: {
+  controller: CanvasController | null | undefined;
+}) {
+  const spacing = useEditorStore((s) => s.coneLineSpacingMeters);
+  const setSpacing = useEditorStore((s) => s.setConeLineSpacingMeters);
+  const pathMode = useEditorStore((s) => s.coneLinePathMode);
+  const setPathMode = useEditorStore((s) => s.setConeLinePathMode);
+
+  const start = (mode: "straight" | "curved") => {
+    setPathMode(mode);
+    const ok = controller?.startConeLineFromSelection(mode);
+    if (ok) {
+      toast.message(
+        mode === "straight"
+          ? "Click the other end · Enter to place"
+          : "Click waypoints, drag handles to bend · Enter to place"
+      );
+    } else {
+      toast.error("Could not start cone line from this cone");
+    }
+  };
+
+  return (
+    <div className="space-y-2 rounded-md border border-border bg-card p-3">
+      <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+        <Spline className="h-3.5 w-3.5" />
+        Cone line
+      </div>
+      <p className="text-[11px] leading-snug text-muted-foreground">
+        Pick how the next stretch should look. You can switch between straight and
+        curved on later waypoints — earlier segments stay as they were.
+      </p>
+      <div className="space-y-1.5">
+        <Label className="text-xs text-muted-foreground">Spacing (m)</Label>
+        <Input
+          type="number"
+          min={0.1}
+          max={20}
+          step={0.1}
+          value={spacing}
+          onChange={(e) => {
+            const v = Number.parseFloat(e.target.value);
+            if (Number.isFinite(v)) setSpacing(v);
+          }}
+          className="h-8 text-sm"
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <Button
+          type="button"
+          variant={pathMode === "straight" ? "secondary" : "outline"}
+          size="sm"
+          onClick={() => start("straight")}
+        >
+          <Minus className="mr-1.5 h-3.5 w-3.5" />
+          Straight
+        </Button>
+        <Button
+          type="button"
+          variant={pathMode === "curved" ? "secondary" : "outline"}
+          size="sm"
+          onClick={() => start("curved")}
+        >
+          <Spline className="mr-1.5 h-3.5 w-3.5" />
+          Curved
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function ConeLineDrawingPanel({
+  controller,
+}: {
+  controller: CanvasController | null | undefined;
+}) {
+  const draftCount = useEditorStore((s) => s.coneLineDraftPointCount);
+  const spacing = useEditorStore((s) => s.coneLineSpacingMeters);
+  const setSpacing = useEditorStore((s) => s.setConeLineSpacingMeters);
+  const pathMode = useEditorStore((s) => s.coneLinePathMode);
+  const setPathMode = useEditorStore((s) => s.setConeLinePathMode);
+  const [bulge, setBulge] = useState(0.35);
+  const isStraight = pathMode === "straight";
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="border-b border-border px-3 py-2 text-sm font-semibold">
+        Drawing cone line
+      </div>
+      <div className="thin-scrollbar flex-1 space-y-3 overflow-y-auto p-3">
+        <div className="space-y-2 rounded-md border border-border bg-card p-3">
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+            {isStraight ? (
+              <Minus className="h-3.5 w-3.5" />
+            ) : (
+              <Spline className="h-3.5 w-3.5" />
+            )}
+            {isStraight ? "Straight path" : "Curved path"}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              type="button"
+              variant={isStraight ? "secondary" : "outline"}
+              size="sm"
+              onClick={() => {
+                setPathMode("straight");
+                controller?.setConeLinePathMode("straight");
+                setBulge(0);
+              }}
+            >
+              <Minus className="mr-1.5 h-3.5 w-3.5" />
+              Straight
+            </Button>
+            <Button
+              type="button"
+              variant={!isStraight ? "secondary" : "outline"}
+              size="sm"
+              onClick={() => {
+                setPathMode("curved");
+                controller?.setConeLinePathMode("curved");
+                setBulge(0.35);
+              }}
+            >
+              <Spline className="mr-1.5 h-3.5 w-3.5" />
+              Curved
+            </Button>
+          </div>
+          <p className="text-[11px] leading-snug text-muted-foreground">
+            Applies to the <span className="font-medium text-foreground">next</span>{" "}
+            segment only. Already-placed stretches keep their own shape.
+            {isStraight
+              ? " Straight segments have no handles."
+              : " Drag beige knobs to bend curved segments."}
+          </p>
+          <p className="text-[11px] text-muted-foreground">
+            {draftCount} waypoint{draftCount === 1 ? "" : "s"}
+          </p>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Spacing (m)</Label>
+            <Input
+              type="number"
+              min={0.1}
+              max={20}
+              step={0.1}
+              value={spacing}
+              onChange={(e) => {
+                const v = Number.parseFloat(e.target.value);
+                if (Number.isFinite(v)) setSpacing(v);
+              }}
+              className="h-8 text-sm"
+            />
+          </div>
+          {!isStraight && draftCount >= 2 ? (
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">
+                Curve amount (resets handles)
+              </Label>
+              <Input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={bulge}
+                onChange={(e) => {
+                  const v = Number.parseFloat(e.target.value);
+                  if (!Number.isFinite(v)) return;
+                  setBulge(v);
+                  controller?.setConeLineBulgeFactor(v);
+                }}
+                className="h-8"
+              />
+              <p className="text-[10px] text-muted-foreground">
+                0 = straight · {bulge.toFixed(2)} · 1 = tight bend
+              </p>
+            </div>
+          ) : null}
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={draftCount < 2}
+              onClick={async () => {
+                const count = await controller?.finishConeLine();
+                if (count && count > 0) {
+                  toast.success(`Placed ${count} disc cones`);
+                } else {
+                  toast.message("Add at least one more waypoint");
+                }
+              }}
+            >
+              <Check className="mr-1.5 h-3.5 w-3.5" />
+              Place
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void controller?.cancelConeLine()}
+            >
+              <X className="mr-1.5 h-3.5 w-3.5" />
+              Cancel
+            </Button>
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            <Kbd>Enter</Kbd> place · <Kbd>Esc</Kbd> cancel
+            {!isStraight ? " · drag handles to bend" : ""}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ConeLineControls({
+  lineId,
+  spacing,
+  memberCount,
+  pointCount,
+  mode,
+  controller,
+}: {
+  lineId: string;
+  spacing: number;
+  memberCount: number;
+  pointCount: number;
+  mode: "straight" | "curved" | "mixed";
+  controller: CanvasController | null | undefined;
+}) {
+  const [draftSpacing, setDraftSpacing] = useState(String(spacing));
+  const modeLabel = mode === "mixed" ? "mixed" : mode === "straight" ? "straight" : "curved";
+
+  useEffect(() => {
+    setDraftSpacing(String(spacing));
+  }, [spacing, lineId]);
+
+  return (
+    <div className="space-y-2 rounded-md border border-border bg-card p-3">
+      <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+        {mode === "straight" ? (
+          <Minus className="h-3.5 w-3.5" />
+        ) : (
+          <Spline className="h-3.5 w-3.5" />
+        )}
+        Cone line · {modeLabel}
+      </div>
+      <p className="text-[11px] leading-snug text-muted-foreground">
+        {memberCount} cone{memberCount === 1 ? "" : "s"} through {pointCount} waypoint
+        {pointCount === 1 ? "" : "s"}
+        {mode === "straight"
+          ? ". Edit path to move waypoints."
+          : ". Edit path to reshape; switch Straight/Curved for the next stretch."}
+      </p>
+      <div className="space-y-1.5">
+        <Label className="text-xs text-muted-foreground">Spacing (m)</Label>
+        <div className="flex gap-2">
+          <Input
+            type="number"
+            min={0.1}
+            max={20}
+            step={0.1}
+            value={draftSpacing}
+            onChange={(e) => setDraftSpacing(e.target.value)}
+            className="h-8 text-sm"
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="h-8 shrink-0"
+            onClick={async () => {
+              const v = Number.parseFloat(draftSpacing);
+              if (!Number.isFinite(v)) return;
+              await controller?.setConeLineSpacingForSelection(v);
+              toast.success("Cone line regenerated");
+            }}
+          >
+            Apply
+          </Button>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => controller?.selectConeLineMembers(lineId)}
+        >
+          Select all
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            useEditorStore.getState().setConeLineSpacingMeters(spacing);
+            useEditorStore.getState().setConeLineToolEnabled(true);
+            controller?.beginEditConeLine(lineId);
+            toast.message("Edit path — click to adjust, Enter to place");
+          }}
+        >
+          <Pencil className="mr-1.5 h-3.5 w-3.5" />
+          Edit path
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            controller?.breakConeLineApart(lineId);
+            toast.success("Cone line unlinked");
+          }}
+        >
+          <Unlink className="mr-1.5 h-3.5 w-3.5" />
+          Unlink
+        </Button>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button type="button" variant="destructive" size="sm">
+              <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+              Delete line
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete this cone line?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Removes all {memberCount} disc cones in the line.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  controller?.deleteConeLine(lineId);
+                  toast.success("Cone line deleted");
+                }}
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   );

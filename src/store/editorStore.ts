@@ -48,6 +48,12 @@ export interface SelectedObjectSnapshot {
   sensingFacing?: "front" | "back" | null;
   /** For `champs-25-gate` only. */
   champsGateColor?: "red" | "green" | "blue" | "yellow" | "white" | null;
+  /** Shared id when this disc cone belongs to a drawn cone line. */
+  coneLineId?: string | null;
+  coneLineSpacing?: number | null;
+  coneLineMode?: "straight" | "curved" | "mixed" | null;
+  coneLinePointCount?: number;
+  coneLineMemberCount?: number;
 }
 
 export interface PlacedSummary {
@@ -87,6 +93,13 @@ export interface EditorState {
 
   /** Ruler */
   rulerEnabled: boolean;
+
+  /** Cone line placement tool (polyline of DiscCone markers) */
+  coneLineToolEnabled: boolean;
+  coneLineSpacingMeters: number;
+  /** Committed vertices while drawing (not counting cursor preview). */
+  coneLineDraftPointCount: number;
+  coneLinePathMode: "straight" | "curved";
 
   /** Selection snapshot */
   selected: SelectedObjectSnapshot | null;
@@ -142,6 +155,10 @@ export interface EditorState {
   setGlobalRotation: (value: number) => void;
 
   setRulerEnabled: (value: boolean) => void;
+  setConeLineToolEnabled: (value: boolean) => void;
+  setConeLineSpacingMeters: (value: number) => void;
+  setConeLineDraftPointCount: (value: number) => void;
+  setConeLinePathMode: (mode: "straight" | "curved") => void;
 
   setSelected: (snapshot: SelectedObjectSnapshot | null) => void;
   setPlacedSummary: (placed: PlacedSummary[]) => void;
@@ -192,6 +209,10 @@ export const useEditorStore = create<EditorState>((set) => ({
   globalRotation: 0,
 
   rulerEnabled: false,
+  coneLineToolEnabled: false,
+  coneLineSpacingMeters: 1,
+  coneLineDraftPointCount: 0,
+  coneLinePathMode: "curved",
 
   selected: null,
   placedSummary: [],
@@ -265,7 +286,21 @@ export const useEditorStore = create<EditorState>((set) => ({
   setGlobalOffsetY: (value) => set({ globalOffsetY: value }),
   setGlobalRotation: (value) => set({ globalRotation: value }),
 
-  setRulerEnabled: (value) => set({ rulerEnabled: value }),
+  setRulerEnabled: (value) =>
+    set({
+      rulerEnabled: value,
+      ...(value ? { coneLineToolEnabled: false } : {}),
+    }),
+  setConeLineToolEnabled: (value) =>
+    set({
+      coneLineToolEnabled: value,
+      ...(value ? { rulerEnabled: false } : {}),
+      ...(!value ? { coneLineDraftPointCount: 0 } : {}),
+    }),
+  setConeLineSpacingMeters: (value) =>
+    set({ coneLineSpacingMeters: Math.max(0.1, Math.min(20, value)) }),
+  setConeLineDraftPointCount: (value) => set({ coneLineDraftPointCount: value }),
+  setConeLinePathMode: (mode) => set({ coneLinePathMode: mode }),
 
   setSelected: (snapshot) => set({ selected: snapshot }),
   setPlacedSummary: (placed) => set({ placedSummary: placed }),

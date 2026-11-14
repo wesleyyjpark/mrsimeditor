@@ -68,6 +68,17 @@ export interface Position {
   altitude?: number;
 }
 
+export interface ConeLinePoint {
+  x: number;
+  y: number;
+  /** Absolute outgoing cubic Bezier handle (toward next waypoint). */
+  outX?: number;
+  outY?: number;
+  /** Absolute incoming cubic Bezier handle (from previous waypoint). */
+  inX?: number;
+  inY?: number;
+}
+
 export interface PlacedObjectMeta {
   id: string;
   config: ObjectConfig;
@@ -96,6 +107,20 @@ export interface PlacedObjectMeta {
    * For champs 25 gate, determines the macro to emit on export.
    */
   champsGateColor?: "red" | "green" | "blue" | "yellow" | "white" | null;
+  /**
+   * Shared id for disc cones placed as a path line. Members share the same
+   * control points + spacing so the line can be regenerated / re-edited.
+   */
+  coneLineId?: string | null;
+  coneLinePoints?: ConeLinePoint[] | null;
+  coneLineSpacing?: number | null;
+  /**
+   * Per-segment mode between waypoints (`length === points.length - 1`).
+   * Lets a single line mix straight runs and curved arcs.
+   */
+  coneLineSegmentModes?: ("straight" | "curved")[] | null;
+  /** Summary of segment modes: all-straight, all-curved, or mixed. */
+  coneLineMode?: "straight" | "curved" | "mixed" | null;
   position?: { x: number; y: number };
   angle?: number;
 }

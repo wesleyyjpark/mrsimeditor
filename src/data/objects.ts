@@ -497,6 +497,21 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     paletteHidden: true,
     showDirectionArrow: false,
   },
+  {
+    id: "disc-cone",
+    label: "Disc Cone",
+    entityPrefix: "trkCone",
+    includeFile: "/Data/Simulations/Multirotor/DiscCone.xml",
+    width: 0.3,
+    height: 0.3,
+    altitude: 0,
+    color: "#ff6d00",
+    fillColor: "#ff6d00",
+    placement: "include",
+    renderStyle: "point",
+    showDirectionArrow: false,
+    paletteCategories: ["favorites", "standard"],
+  },
 ];
 
 export const OBJECT_LOOKUP: Record<string, ObjectConfig> = OBJECT_CATALOG.reduce(

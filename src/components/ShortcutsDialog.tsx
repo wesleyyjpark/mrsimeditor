@@ -35,6 +35,9 @@ const SHORTCUTS: Shortcut[] = [
 
   { group: "Canvas", combo: ["Space + Drag"], description: "Pan view" },
   { group: "Canvas", combo: ["Shift + Drag"], description: "Disable snap while moving" },
+  { group: "Canvas", combo: ["Enter"], description: "Finish cone line (while drawing)" },
+  { group: "Canvas", combo: ["Double-click"], description: "Finish cone line (while drawing)" },
+  { group: "Canvas", combo: ["Esc"], description: "Cancel cone line (while drawing)" },
 ];
 
 export function ShortcutsDialog() {

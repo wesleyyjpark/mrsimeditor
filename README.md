@@ -30,7 +30,6 @@ The canvas is rendered with fabric
 
 Known Issues:
 - You can't see the previous pole sensor orientation after you add a checkpoint and change it
-- All the champ size gates and hurdles are inaccurate when placed down
 - Stacked 5x5 gates don't have a way to change orientation or go backwards through them with sensing
 
 

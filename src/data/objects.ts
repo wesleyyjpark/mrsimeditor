@@ -12,6 +12,42 @@ import {
 export const GATE_PLAN_VISUAL_H_M = 2.1;
 export const gatePlanVisualWidthM = (footprintWidthM: number) => footprintWidthM * (2.4 / 2.1);
 
+/**
+ * MultiGP / MRSIM obstacle labels use feet (gates Width×Height, hurdles Height×Width).
+ * Catalog sizes and the canvas grid are meters — convert so plan footprints match the sim models.
+ */
+export const FEET_TO_METERS = 0.3048;
+const ft = (feet: number) => feet * FEET_TO_METERS;
+
+/** Gate-style outline: Width×Height in feet → meter plan strip. */
+const gateSizeM = (widthFt: number, heightFt: number) => ({
+  width: ft(widthFt),
+  height: ft(heightFt),
+  footprintWidth: ft(widthFt),
+  footprintHeight: 0.2,
+  visualWidth: gatePlanVisualWidthM(ft(widthFt)),
+  visualHeight: GATE_PLAN_VISUAL_H_M,
+});
+
+/** Hurdle labels are Height×Width in feet (e.g. 5x10 = 5′ tall × 10′ wide). */
+const hurdleSizeM = (heightFt: number, widthFt: number) => gateSizeM(widthFt, heightFt);
+
+/** Square / box plan footprint from a foot size (dive box, tower pad, mat). */
+const squareFeetM = (sizeFt: number) => {
+  const m = ft(sizeFt);
+  return {
+    width: m,
+    height: m,
+    footprintWidth: m,
+    footprintHeight: m,
+    visualWidth: gatePlanVisualWidthM(m),
+    visualHeight: gatePlanVisualWidthM(m),
+  };
+};
+
+/** Half-span centering offset for edge-anchored gate includes (meters). */
+const gateCenterOffsetM = (widthFt: number) => -ft(widthFt) / 2;
+
 export type Champs25GateColor = "red" | "green" | "blue" | "yellow" | "white";
 
 const CHAMPS25_COLOR_TO_MACRO: Record<Champs25GateColor, string> = {
@@ -135,12 +171,8 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     label: "7x16Hurdle",
     entityPrefix: "trkHurdle",
     includeFile: "/Data/Simulations/Multirotor/7x16Hurdle.xml",
-    width: 7,
-    height: 16,
-    footprintWidth: 16,
-    footprintHeight: 0.2,
-    visualWidth: gatePlanVisualWidthM(16),
-    visualHeight: GATE_PLAN_VISUAL_H_M,
+    /** 7′ tall × 16′ wide → meters for canvas / export scale. */
+    ...hurdleSizeM(7, 16),
     altitude: 0,
     color: "#ffb74d",
     placement: "include",
@@ -154,12 +186,8 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     label: "5x10Hurdle",
     entityPrefix: "trkHurdle",
     includeFile: "/Data/Simulations/Multirotor/5x10Hurdle.xml",
-    width: 5,
-    height: 10,
-    footprintWidth: 10,
-    footprintHeight: 0.2,
-    visualWidth: gatePlanVisualWidthM(10),
-    visualHeight: GATE_PLAN_VISUAL_H_M,
+    /** Standard MultiGP hurdle: 5′ tall × 10′ wide. */
+    ...hurdleSizeM(5, 10),
     altitude: 0,
     color: "#ffcc80",
     placement: "include",
@@ -173,12 +201,8 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     label: "4x7Hurdle",
     entityPrefix: "trkHurdle",
     includeFile: "/Data/Simulations/Multirotor/4x7Hurdle.xml",
-    width: 4,
-    height: 7,
-    footprintWidth: 7,
-    footprintHeight: 0.2,
-    visualWidth: gatePlanVisualWidthM(7),
-    visualHeight: GATE_PLAN_VISUAL_H_M,
+    /** 4′ tall × 7′ wide. */
+    ...hurdleSizeM(4, 7),
     altitude: 0,
     color: "#ffe0b2",
     placement: "include",
@@ -194,13 +218,8 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     macroName: "Centered7x6Gate",
     /** For import layouts that omit Instance/macro matching. Same model as centered 5×5 macros. */
     includeFile: "/Data/Simulations/Multirotor/7x6Gate.xml",
-    width: 7,
-    height: 6,
-    /** Plan footprint matches 7 m course span (avoid a thin strip vs other gates). */
-    footprintWidth: 7,
-    footprintHeight: 0.2,
-    visualWidth: gatePlanVisualWidthM(7),
-    visualHeight: GATE_PLAN_VISUAL_H_M,
+    /** MultiGP champ gate: 7′ × 6′ opening. */
+    ...gateSizeM(7, 6),
     altitude: 0,
     color: "#26a69a",
     placement: "macro",
@@ -214,12 +233,7 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     entityPrefix: "trkGate",
     macroName: "Centered7x6StartFinishGate",
     includeFile: "/Data/Simulations/Multirotor/7x6StartFinishGate.xml",
-    width: 7,
-    height: 6,
-    footprintWidth: 7,
-    footprintHeight: 0.2,
-    visualWidth: gatePlanVisualWidthM(7),
-    visualHeight: GATE_PLAN_VISUAL_H_M,
+    ...gateSizeM(7, 6),
     altitude: 0,
     color: "#42a5f5",
     placement: "macro",
@@ -232,12 +246,7 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     label: "7x7DiveBox",
     entityPrefix: "trkDive",
     includeFile: "/Data/Simulations/Multirotor/7x7DiveBox.xml",
-    width: 2.1,
-    height: 2.1,
-    footprintWidth: 2.1,
-    footprintHeight: 2.1,
-    visualWidth: gatePlanVisualWidthM(2.1),
-    visualHeight: gatePlanVisualWidthM(2.1),
+    ...squareFeetM(7),
     altitude: 0,
     color: "#26c6da",
     placement: "include",
@@ -250,12 +259,7 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     label: "7x7DiveBoxCorner",
     entityPrefix: "trkDive",
     includeFile: "/Data/Simulations/Multirotor/7x7DiveBoxCorner.xml",
-    width: 2.1,
-    height: 2.1,
-    footprintWidth: 2.1,
-    footprintHeight: 2.1,
-    visualWidth: gatePlanVisualWidthM(2.1),
-    visualHeight: gatePlanVisualWidthM(2.1),
+    ...squareFeetM(7),
     altitude: 0,
     color: "#4dd0e1",
     placement: "include",
@@ -268,12 +272,7 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     label: "7x7DiveGate",
     entityPrefix: "trkDive",
     includeFile: "/Data/Simulations/Multirotor/7x7DiveGate.xml",
-    width: 7,
-    height: 7,
-    footprintWidth: 7,
-    footprintHeight: 0.2,
-    visualWidth: gatePlanVisualWidthM(7),
-    visualHeight: GATE_PLAN_VISUAL_H_M,
+    ...gateSizeM(7, 7),
     altitude: 0,
     color: "#80deea",
     placement: "include",
@@ -286,12 +285,8 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     label: "7x6Tower",
     entityPrefix: "trkTower",
     includeFile: "/Data/Simulations/Multirotor/7x6Tower.xml",
-    width: 2.1,
-    height: 2.1,
-    footprintWidth: 2.1,
-    footprintHeight: 2.1,
-    visualWidth: gatePlanVisualWidthM(2.1),
-    visualHeight: gatePlanVisualWidthM(2.1),
+    /** Elevated 7×6 gate — plan pad uses the 7′ span. */
+    ...squareFeetM(7),
     altitude: 0,
     color: "#8d6e63",
     placement: "include",
@@ -304,12 +299,7 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     label: "7x7ClimbGate",
     entityPrefix: "trkGate",
     includeFile: "/Data/Simulations/Multirotor/7x7ClimbGate.xml",
-    width: 7,
-    height: 7,
-    footprintWidth: 7,
-    footprintHeight: 0.2,
-    visualWidth: gatePlanVisualWidthM(7),
-    visualHeight: GATE_PLAN_VISUAL_H_M,
+    ...gateSizeM(7, 7),
     altitude: 0,
     color: "#26a69a",
     placement: "include",
@@ -487,8 +477,7 @@ export const OBJECT_CATALOG: ObjectConfig[] = [
     label: "7x7 Mat",
     entityPrefix: "trkMat",
     includeFile: "/Data/Simulations/Multirotor/7x7Mat.xml",
-    width: 2.1,
-    height: 2.1,
+    ...squareFeetM(7),
     altitude: 0,
     color: "#9ccc65",
     placement: "include",
@@ -676,24 +665,27 @@ export const CANOPY_EXPORT_BLOCK = [
   "  </Transform>",
 ];
 
+const CENTER_5X5_M = (-2.1 / 2).toFixed(4); // matches 5×5 model half-span (m)
+const CENTER_7X6_M = gateCenterOffsetM(7).toFixed(4);
+
 export const CENTERED_GATE_MACROS = [
   '  <Macro name="Centered5x5StartFinishGate">',
-  '    <Transform x="-1.05">',
+  `    <Transform x="${CENTER_5X5_M}">`,
   '      <Include file="/Data/Simulations/Multirotor/5x5StartFinishGate.xml"/>',
   "    </Transform>",
   "  </Macro>",
   '  <Macro name="Centered5x5Gate">',
-  '    <Transform x="-1.05">',
+  `    <Transform x="${CENTER_5X5_M}">`,
   '      <Include file="/Data/Simulations/Multirotor/5x5Gate.xml"/>',
   "    </Transform>",
   "  </Macro>",
   '  <Macro name="Centered7x6Gate">',
-  '    <Transform x="-3.5">',
+  `    <Transform x="${CENTER_7X6_M}">`,
   '      <Include file="/Data/Simulations/Multirotor/7x6Gate.xml"/>',
   "    </Transform>",
   "  </Macro>",
   '  <Macro name="Centered7x6StartFinishGate">',
-  '    <Transform x="-3.5">',
+  `    <Transform x="${CENTER_7X6_M}">`,
   '      <Include file="/Data/Simulations/Multirotor/7x6StartFinishGate.xml"/>',
   "    </Transform>",
   "  </Macro>",
